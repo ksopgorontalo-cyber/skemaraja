@@ -34,6 +34,6 @@
   // Bisa diisi via Cloudflare Dashboard → Worker → Settings → Variables
   // JANGAN commit file ini dengan kredensial asli!
   "vars": {
-    "AUTH_PASSWORD": "admin123"
+    "AUTH_PASSWORD": "Google.com12"
   }
 }
