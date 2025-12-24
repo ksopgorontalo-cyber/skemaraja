@@ -365,9 +365,19 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
             // Format: <td class="bg-warning">24-Dec-2025 10:00:08</td>
             const scheduleColumn = schedule.name === "Pagi" ? 1 : schedule.name === "Siang" ? 2 : 3;
 
-            // Cari row hari ini di tabel absensi
-            const today = new Date();
-            const todayStr = today.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-');
+            // Cari row hari ini di tabel absensi (gunakan waktu WITA)
+            const now = new Date();
+            const witaOffset = 8 * 60; // menit
+            const witaTime = new Date(now.getTime() + (witaOffset + now.getTimezoneOffset()) * 60000);
+
+            // Format: "24-Dec-2025"
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const day = String(witaTime.getDate()).padStart(2, '0');
+            const month = months[witaTime.getMonth()];
+            const year = witaTime.getFullYear();
+            const todayStr = `${day}-${month}-${year}`;
+
+            console.log(`🔍 Mencari tanggal: ${todayStr} untuk kolom ${schedule.name} (column ${scheduleColumn})`);
 
             // Regex untuk menemukan baris tabel dengan tanggal hari ini
             const tableRowRegex = new RegExp(`<tr>\\s*<td>${todayStr}</td>([\\s\\S]*?)</tr>`, 'i');
@@ -395,13 +405,13 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
                   const recordedSecond = parseInt(timeMatch[3]);
                   const timeStr = `${timeMatch[1]}:${timeMatch[2]}:${timeMatch[3]}`;
 
-                  // Bandingkan dengan waktu saat ini (WITA)
-                  const nowWita = new Date(today.getTime() + (8 * 60 + today.getTimezoneOffset()) * 60000);
-                  const currentMinutes = nowWita.getHours() * 60 + nowWita.getMinutes();
+                  // Bandingkan dengan waktu saat ini (WITA) - witaTime sudah dihitung di atas
+                  const currentMinutes = witaTime.getHours() * 60 + witaTime.getMinutes();
                   const recordedMinutes = recordedHour * 60 + recordedMinute;
 
                   // Jika selisih lebih dari 5 menit, berarti check-in lama (sudah ada sebelumnya)
                   const timeDiff = Math.abs(currentMinutes - recordedMinutes);
+                  console.log(`🕐 ${user.name}: Waktu tercatat=${timeStr}, Waktu WITA sekarang=${witaTime.getHours()}:${witaTime.getMinutes()}, Selisih=${timeDiff} menit`);
 
                   if (timeDiff > 5) {
                     // Check-in sudah ada sebelumnya
