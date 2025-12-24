@@ -151,14 +151,26 @@ export default {
         if (diff <= 5) {
           console.log(`✅ Jadwal cocok: ${schedule.name} (${schedule.hour}:${schedule.minute})`);
 
+          // Hitung jumlah user yang akan check-in
+          const activeUsers = config.users.filter(u => u.enabled && u.nip && u.password);
+          console.log(`👥 Total user aktif: ${activeUsers.length}`);
+
           // Check-in untuk semua user yang enabled
-          for (const user of config.users) {
-            if (!user.enabled || !user.nip || !user.password) continue;
-            console.log(`👤 Check-in untuk: ${user.name} (${user.nip.substring(0, 6)}****)`);
+          let userIndex = 0;
+          for (const user of activeUsers) {
+            userIndex++;
+            console.log(`👤 [${userIndex}/${activeUsers.length}] Check-in untuk: ${user.name} (${user.nip.substring(0, 6)}****)`);
             await performCheckin(config, schedule, user, env);
-            // Delay 2 detik antar user untuk menghindari rate limiting
-            await new Promise(r => setTimeout(r, 2000));
+
+            // Delay 3 detik antar user (max ~8 user dalam 30 detik timeout)
+            // Kecuali user terakhir
+            if (userIndex < activeUsers.length) {
+              console.log(`⏳ Menunggu 3 detik sebelum user berikutnya...`);
+              await new Promise(r => setTimeout(r, 3000));
+            }
           }
+
+          console.log(`✅ Selesai check-in ${schedule.name} untuk ${activeUsers.length} user`);
         }
       }
     } catch (error) {
