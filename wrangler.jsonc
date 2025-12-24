@@ -23,11 +23,11 @@
   // - Sore  16:30 WITA = 08:30 UTC
   //
   // Format: menit jam * * hari (1-5 = Senin-Jumat)
-  "triggers": {
+   "triggers": {
     "crons": [
-      "30 23 * * 0-4",
-      "30 4 * * 1-5",
-      "30 8 * * 1-5"
+      "30 23 * * *",
+      "30 4 * * *",
+      "30 8 * * *"
     ]
   },
   // Environment Variables (opsional)
