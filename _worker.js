@@ -298,6 +298,7 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
     console.log("📤 Mengirim request check-in...");
     console.log("📤 Form data:", formData.toString());
 
+    // Gunakan redirect:follow untuk mendapat dashboard langsung setelah login
     const authResponse = await fetch(SKEMARAJA_AUTH, {
       method: "POST",
       headers: {
@@ -310,153 +311,111 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
         "Cookie": cookies,
       },
       body: formData.toString(),
-      redirect: "manual"
+      redirect: "follow"  // Follow redirect untuk mendapat dashboard
     });
 
     const responseStatus = authResponse.status;
-    const responseLocation = authResponse.headers.get("location") || "";
+    const finalUrl = authResponse.url;
+    const responseHtml = await authResponse.text();
 
     console.log(`📥 Response status: ${responseStatus}`);
-    console.log(`📥 Redirect location: ${responseLocation}`);
+    console.log(`📥 Final URL: ${finalUrl}`);
+    console.log(`📥 Response HTML length: ${responseHtml.length} chars`);
 
-    // Cek hasil berdasarkan redirect location
+    // Cek hasil berdasarkan final URL dan konten
     let success = false;
     let message = "";
 
-    if (responseStatus >= 300 && responseStatus < 400) {
-      // Redirect response
-      if (responseLocation.includes("dashboard") || responseLocation.includes("home") || responseLocation.includes("beranda")) {
-        success = true;
-        message = "Check-in berhasil! Redirect ke dashboard.";
-      } else if (responseLocation.includes("login")) {
-        success = false;
-        message = "Check-in gagal. Kredensial mungkin salah atau session expired.";
-      } else if (responseLocation === SKEMARAJA_BASE || responseLocation === SKEMARAJA_BASE + "/") {
-        // Redirect ke base URL - perlu verifikasi dengan fetch dashboard
-        success = true;
-        message = "Check-in berhasil (redirect ke beranda).";
-      } else {
-        // Redirect ke lokasi lain - anggap berhasil
-        success = true;
-        message = `Check-in berhasil. Redirect ke: ${responseLocation}`;
-      }
+    // Jika final URL adalah login page, berarti gagal
+    if (finalUrl.includes("/login")) {
+      success = false;
+      message = "Check-in gagal. Kredensial mungkin salah.";
+    } else if (responseStatus === 200 && responseHtml.length > 10000) {
+      // Berhasil - kita dapat dashboard page
+      success = true;
+      message = "Check-in berhasil!";
 
-      // Verifikasi dengan fetch dashboard untuk cek waktu absensi
-      if (success) {
-        try {
-          console.log("🔍 Verifikasi dashboard untuk cek waktu absensi...");
+      // Parse waktu absensi dari response HTML langsung
+      try {
+        console.log("� Parsing waktu absensi dari dashboard...");
 
-          // Ambil cookies baru dari response authenticate
-          const newCookies = authResponse.headers.getAll("set-cookie");
-          const allCookies = [...setCookies, ...newCookies].map(c => c.split(";")[0]).join("; ");
-          console.log(`🍪 Total cookies: ${allCookies.length} chars`);
+        // Cari row hari ini di tabel absensi (gunakan waktu WITA)
+        const now = new Date();
+        const witaOffset = 8 * 60; // menit
+        const witaTime = new Date(now.getTime() + (witaOffset + now.getTimezoneOffset()) * 60000);
 
-          const dashboardResponse = await fetch(SKEMARAJA_BASE, {
-            headers: {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-              "Cookie": allCookies,
-            },
-            redirect: "follow"  // Follow redirect to get actual dashboard
+        // Format: "24-Dec-2025"
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const day = String(witaTime.getDate()).padStart(2, '0');
+        const month = months[witaTime.getMonth()];
+        const year = witaTime.getFullYear();
+        const todayStr = `${day}-${month}-${year}`;
+
+        console.log(`🔍 Mencari tanggal: ${todayStr} untuk kolom ${schedule.name}`);
+
+        // Cari semua waktu dengan tanggal hari ini
+        const timePattern = new RegExp(`${todayStr}\\s+(\\d{2}):(\\d{2}):(\\d{2})`, 'g');
+        const matches = [];
+        let m;
+        while ((m = timePattern.exec(responseHtml)) !== null) {
+          matches.push({
+            hour: parseInt(m[1]),
+            minute: parseInt(m[2]),
+            second: parseInt(m[3]),
+            timeStr: `${m[1]}:${m[2]}:${m[3]}`
           });
-
-          console.log(`📄 Dashboard response: status=${dashboardResponse.status}, ok=${dashboardResponse.ok}`);
-
-          if (dashboardResponse.ok) {
-            const dashboardHtml = await dashboardResponse.text();
-            console.log(`📄 Dashboard HTML length: ${dashboardHtml.length} chars`);
-
-            // Parse waktu absensi dari tabel
-            // Format: <td class="bg-warning">24-Dec-2025 10:00:08</td>
-            const scheduleColumn = schedule.name === "Pagi" ? 1 : schedule.name === "Siang" ? 2 : 3;
-
-            // Cari row hari ini di tabel absensi (gunakan waktu WITA)
-            const now = new Date();
-            const witaOffset = 8 * 60; // menit
-            const witaTime = new Date(now.getTime() + (witaOffset + now.getTimezoneOffset()) * 60000);
-
-            // Format: "24-Dec-2025"
-            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            const day = String(witaTime.getDate()).padStart(2, '0');
-            const month = months[witaTime.getMonth()];
-            const year = witaTime.getFullYear();
-            const todayStr = `${day}-${month}-${year}`;
-
-            console.log(`🔍 Mencari tanggal: ${todayStr} untuk kolom ${schedule.name}`);
-
-            // Pendekatan sederhana: cari langsung pola tanggal + waktu di HTML
-            // Format di tabel: "24-Dec-2025 10:00:08" untuk Pagi, "24-Dec-2025 12:48:56" untuk Siang
-            // Pagi biasanya jam 07:00-11:59, Siang 12:00-15:59, Sore 16:00-23:59
-
-            // Cari semua waktu dengan tanggal hari ini
-            const timePattern = new RegExp(`${todayStr}\\s+(\\d{2}):(\\d{2}):(\\d{2})`, 'g');
-            const matches = [];
-            let m;
-            while ((m = timePattern.exec(dashboardHtml)) !== null) {
-              matches.push({
-                hour: parseInt(m[1]),
-                minute: parseInt(m[2]),
-                second: parseInt(m[3]),
-                timeStr: `${m[1]}:${m[2]}:${m[3]}`
-              });
-            }
-
-            console.log(`📊 Ditemukan ${matches.length} waktu check-in hari ini`);
-
-            // Tentukan waktu mana yang sesuai dengan schedule
-            // Pagi: jam 7-11, Siang: jam 12-15, Sore: jam 16-23
-            let attendanceMatch = null;
-            for (const match of matches) {
-              if (schedule.name === "Pagi" && match.hour >= 7 && match.hour < 12) {
-                attendanceMatch = match;
-                break;
-              } else if (schedule.name === "Siang" && match.hour >= 12 && match.hour < 16) {
-                attendanceMatch = match;
-                break;
-              } else if (schedule.name === "Sore" && match.hour >= 16 && match.hour <= 23) {
-                attendanceMatch = match;
-                break;
-              }
-            }
-
-            if (attendanceMatch) {
-              // Bandingkan dengan waktu saat ini (WITA)
-              const currentMinutes = witaTime.getHours() * 60 + witaTime.getMinutes();
-              const recordedMinutes = attendanceMatch.hour * 60 + attendanceMatch.minute;
-              const timeDiff = Math.abs(currentMinutes - recordedMinutes);
-
-              console.log(`🕐 ${user.name}: Waktu tercatat=${attendanceMatch.timeStr}, Waktu WITA sekarang=${witaTime.getHours()}:${witaTime.getMinutes()}, Selisih=${timeDiff} menit`);
-
-              if (timeDiff > 5) {
-                // Check-in sudah ada sebelumnya
-                message = `ℹ️ Sudah check-in ${schedule.name} sebelumnya (${attendanceMatch.timeStr})`;
-              } else {
-                // Check-in baru (selisih < 5 menit)
-                message = `✅ Check-in ${schedule.name} berhasil! (${attendanceMatch.timeStr})`;
-              }
-            } else {
-              // Tidak ada waktu untuk schedule ini - mungkin check-in baru saja berhasil
-              // tapi page belum refresh atau waktu tidak sesuai range
-              console.log(`📋 ${user.name}: Tidak menemukan waktu ${schedule.name} di rentang yang sesuai`);
-              message = `✅ Check-in ${schedule.name} berhasil!`;
-            }
-          }
-        } catch (verifyError) {
-          console.log(`⚠️ Verifikasi dashboard gagal (ignored): ${verifyError.message}`);
-          // Tetap success, hanya pesan yang kurang detail
         }
+
+        console.log(`📊 Ditemukan ${matches.length} waktu check-in hari ini: ${matches.map(m => m.timeStr).join(', ')}`);
+
+        // Tentukan waktu mana yang sesuai dengan schedule
+        // Pagi: jam 7-11, Siang: jam 12-15, Sore: jam 16-23
+        let attendanceMatch = null;
+        for (const match of matches) {
+          if (schedule.name === "Pagi" && match.hour >= 7 && match.hour < 12) {
+            attendanceMatch = match;
+            break;
+          } else if (schedule.name === "Siang" && match.hour >= 12 && match.hour < 16) {
+            attendanceMatch = match;
+            break;
+          } else if (schedule.name === "Sore" && match.hour >= 16 && match.hour <= 23) {
+            attendanceMatch = match;
+            break;
+          }
+        }
+
+        if (attendanceMatch) {
+          // Bandingkan dengan waktu saat ini (WITA)
+          const currentMinutes = witaTime.getHours() * 60 + witaTime.getMinutes();
+          const recordedMinutes = attendanceMatch.hour * 60 + attendanceMatch.minute;
+          const timeDiff = Math.abs(currentMinutes - recordedMinutes);
+
+          console.log(`🕐 Waktu tercatat=${attendanceMatch.timeStr}, Waktu WITA=${witaTime.getHours()}:${witaTime.getMinutes()}, Selisih=${timeDiff} menit`);
+
+          if (timeDiff > 5) {
+            // Check-in sudah ada sebelumnya
+            message = `ℹ️ Sudah check-in ${schedule.name} sebelumnya (${attendanceMatch.timeStr})`;
+          } else {
+            // Check-in baru (selisih < 5 menit)
+            message = `✅ Check-in ${schedule.name} berhasil! (${attendanceMatch.timeStr})`;
+          }
+        } else {
+          console.log(`📋 Tidak menemukan waktu ${schedule.name} di rentang yang sesuai`);
+          message = `✅ Check-in ${schedule.name} berhasil!`;
+        }
+      } catch (parseError) {
+        console.log(`⚠️ Error parsing waktu: ${parseError.message}`);
       }
 
-    } else if (responseStatus === 200) {
-      // Baca response body untuk cek pesan error
-      const responseText = await authResponse.text();
-      if (responseText.includes("berhasil") || responseText.includes("success")) {
+    } else if (responseStatus === 200 && responseHtml.length <= 10000) {
+      // Response kecil - mungkin error page atau login page
+      if (responseHtml.includes("berhasil") || responseHtml.includes("success")) {
         success = true;
         message = "Check-in berhasil!";
-      } else if (responseText.includes("sudah check") || responseText.includes("already")) {
+      } else if (responseHtml.includes("sudah check") || responseHtml.includes("already")) {
         success = true;
         message = "Sudah check-in sebelumnya hari ini.";
-      } else if (responseText.includes("password") || responseText.includes("salah")) {
+      } else if (responseHtml.includes("password") || responseHtml.includes("salah")) {
         success = false;
         message = "NIP atau password salah.";
       } else {
