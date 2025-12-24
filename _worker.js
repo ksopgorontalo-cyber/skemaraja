@@ -319,11 +319,20 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
 
     // Gabungkan cookies dari login page + authenticate response
     const authCookies = authResponse.headers.getAll("set-cookie");
+    console.log(`🍪 Login cookies count: ${setCookies.length}`);
+    console.log(`🍪 Auth response cookies count: ${authCookies.length}`);
+
+    // Log nama-nama cookie untuk debug
+    const loginCookieNames = setCookies.map(c => c.split("=")[0]).join(", ");
+    const authCookieNames = authCookies.map(c => c.split("=")[0]).join(", ");
+    console.log(`🍪 Login cookie names: ${loginCookieNames}`);
+    console.log(`🍪 Auth cookie names: ${authCookieNames}`);
+
     const allCookies = [...setCookies, ...authCookies].map(c => c.split(";")[0]).join("; ");
 
     console.log(`📥 Response status: ${responseStatus}`);
     console.log(`📥 Redirect location: ${responseLocation}`);
-    console.log(`🍪 All cookies: ${allCookies.length} chars`);
+    console.log(`🍪 Combined cookies: ${allCookies.substring(0, 200)}...`);
 
     // Cek hasil berdasarkan status dan redirect
     let success = false;
@@ -357,7 +366,7 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
 
           // Parse waktu absensi dari response HTML langsung
           try {
-            console.log("� Parsing waktu absensi dari dashboard...");
+            console.log("Parsing waktu absensi dari dashboard...");
 
             // Cari row hari ini di tabel absensi (gunakan waktu WITA)
             const now = new Date();
