@@ -11,7 +11,7 @@
   "kv_namespaces": [
     {
       "binding": "CHECKIN_KV",
-      "id": "YOUR_KV_NAMESPACE_ID"
+      "id": "dd8801d99ff44b39ae3cd1621f26d7ee"
     }
   ],
   // Jadwal Cron Triggers (dalam UTC)
