@@ -225,11 +225,12 @@ async function getLogs(env) {
 }
 
 // ============================================================================
-// Check-in Logic - Now accepts user parameter
+// Check-in Logic - Now accepts user parameter with retry
 // ============================================================================
-async function performCheckin(config, schedule, user, env) {
+async function performCheckin(config, schedule, user, env, retryCount = 0) {
+  const maxRetries = 3;
   const startTime = new Date().toISOString();
-  console.log(`🚀 Starting check-in: ${schedule.name} for ${user.name}`);
+  console.log(`🚀 Starting check-in: ${schedule.name} for ${user.name}${retryCount > 0 ? ` (retry ${retryCount})` : ''}`);
 
   try {
     // Validasi kredensial
@@ -334,6 +335,12 @@ async function performCheckin(config, schedule, user, env) {
         message = "Check-in gagal. Periksa kredensial.";
       }
     } else {
+      // Retry untuk error 5xx
+      if (responseStatus >= 500 && retryCount < maxRetries) {
+        console.log(`⚠️ Server error ${responseStatus}, retrying in 3 seconds...`);
+        await new Promise(r => setTimeout(r, 3000));
+        return await performCheckin(config, schedule, user, env, retryCount + 1);
+      }
       success = false;
       message = `Check-in gagal dengan status: ${responseStatus}`;
     }
