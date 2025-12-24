@@ -377,63 +377,63 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
             const year = witaTime.getFullYear();
             const todayStr = `${day}-${month}-${year}`;
 
-            console.log(`🔍 Mencari tanggal: ${todayStr} untuk kolom ${schedule.name} (column ${scheduleColumn})`);
+            console.log(`🔍 Mencari tanggal: ${todayStr} untuk kolom ${schedule.name}`);
 
-            // Regex untuk menemukan baris tabel dengan tanggal hari ini
-            const tableRowRegex = new RegExp(`<tr>\\s*<td>${todayStr}</td>([\\s\\S]*?)</tr>`, 'i');
-            const rowMatch = dashboardHtml.match(tableRowRegex);
+            // Pendekatan sederhana: cari langsung pola tanggal + waktu di HTML
+            // Format di tabel: "24-Dec-2025 10:00:08" untuk Pagi, "24-Dec-2025 12:48:56" untuk Siang
+            // Pagi biasanya jam 07:00-11:59, Siang 12:00-15:59, Sore 16:00-23:59
 
-            if (rowMatch) {
-              // Extract cells dari row
-              const cellRegex = /<td[^>]*>(.*?)<\/td>/gi;
-              const cells = [];
-              let cellMatch;
-              while ((cellMatch = cellRegex.exec(rowMatch[0])) !== null) {
-                cells.push(cellMatch[1].trim());
+            // Cari semua waktu dengan tanggal hari ini
+            const timePattern = new RegExp(`${todayStr}\\s+(\\d{2}):(\\d{2}):(\\d{2})`, 'g');
+            const matches = [];
+            let m;
+            while ((m = timePattern.exec(dashboardHtml)) !== null) {
+              matches.push({
+                hour: parseInt(m[1]),
+                minute: parseInt(m[2]),
+                second: parseInt(m[3]),
+                timeStr: `${m[1]}:${m[2]}:${m[3]}`
+              });
+            }
+
+            console.log(`📊 Ditemukan ${matches.length} waktu check-in hari ini`);
+
+            // Tentukan waktu mana yang sesuai dengan schedule
+            // Pagi: jam 7-11, Siang: jam 12-15, Sore: jam 16-23
+            let attendanceMatch = null;
+            for (const match of matches) {
+              if (schedule.name === "Pagi" && match.hour >= 7 && match.hour < 12) {
+                attendanceMatch = match;
+                break;
+              } else if (schedule.name === "Siang" && match.hour >= 12 && match.hour < 16) {
+                attendanceMatch = match;
+                break;
+              } else if (schedule.name === "Sore" && match.hour >= 16 && match.hour <= 23) {
+                attendanceMatch = match;
+                break;
               }
+            }
 
-              // cells[0] = tanggal, cells[1] = Pagi, cells[2] = Siang, cells[3] = Sore
-              const attendanceTime = cells[scheduleColumn] || "";
+            if (attendanceMatch) {
+              // Bandingkan dengan waktu saat ini (WITA)
+              const currentMinutes = witaTime.getHours() * 60 + witaTime.getMinutes();
+              const recordedMinutes = attendanceMatch.hour * 60 + attendanceMatch.minute;
+              const timeDiff = Math.abs(currentMinutes - recordedMinutes);
 
-              if (attendanceTime && attendanceTime.includes(":")) {
-                // Extract waktu saja (HH:MM:SS)
-                const timeMatch = attendanceTime.match(/(\d{2}):(\d{2}):(\d{2})/);
+              console.log(`🕐 ${user.name}: Waktu tercatat=${attendanceMatch.timeStr}, Waktu WITA sekarang=${witaTime.getHours()}:${witaTime.getMinutes()}, Selisih=${timeDiff} menit`);
 
-                if (timeMatch) {
-                  const recordedHour = parseInt(timeMatch[1]);
-                  const recordedMinute = parseInt(timeMatch[2]);
-                  const recordedSecond = parseInt(timeMatch[3]);
-                  const timeStr = `${timeMatch[1]}:${timeMatch[2]}:${timeMatch[3]}`;
-
-                  // Bandingkan dengan waktu saat ini (WITA) - witaTime sudah dihitung di atas
-                  const currentMinutes = witaTime.getHours() * 60 + witaTime.getMinutes();
-                  const recordedMinutes = recordedHour * 60 + recordedMinute;
-
-                  // Jika selisih lebih dari 5 menit, berarti check-in lama (sudah ada sebelumnya)
-                  const timeDiff = Math.abs(currentMinutes - recordedMinutes);
-                  console.log(`🕐 ${user.name}: Waktu tercatat=${timeStr}, Waktu WITA sekarang=${witaTime.getHours()}:${witaTime.getMinutes()}, Selisih=${timeDiff} menit`);
-
-                  if (timeDiff > 5) {
-                    // Check-in sudah ada sebelumnya
-                    message = `ℹ️ Sudah check-in ${schedule.name} sebelumnya (${timeStr})`;
-                    console.log(`📋 ${user.name}: Sudah check-in ${schedule.name} pada ${timeStr}, selisih ${timeDiff} menit`);
-                  } else {
-                    // Check-in baru (selisih < 5 menit)
-                    message = `✅ Check-in ${schedule.name} berhasil! (${timeStr})`;
-                    console.log(`📋 ${user.name}: Check-in ${schedule.name} baru berhasil pada ${timeStr}`);
-                  }
-                } else {
-                  message = `✅ Check-in ${schedule.name} berhasil!`;
-                }
+              if (timeDiff > 5) {
+                // Check-in sudah ada sebelumnya
+                message = `ℹ️ Sudah check-in ${schedule.name} sebelumnya (${attendanceMatch.timeStr})`;
               } else {
-                // Kolom kosong - mungkin check-in gagal atau belum tercatat
-                message = `⚠️ Check-in ${schedule.name} terkirim, tapi waktu belum tercatat.`;
-                console.log(`📋 ${user.name}: Kolom ${schedule.name} masih kosong`);
+                // Check-in baru (selisih < 5 menit)
+                message = `✅ Check-in ${schedule.name} berhasil! (${attendanceMatch.timeStr})`;
               }
             } else {
-              // Tidak menemukan row hari ini, tapi redirect sukses
+              // Tidak ada waktu untuk schedule ini - mungkin check-in baru saja berhasil
+              // tapi page belum refresh atau waktu tidak sesuai range
+              console.log(`📋 ${user.name}: Tidak menemukan waktu ${schedule.name} di rentang yang sesuai`);
               message = `✅ Check-in ${schedule.name} berhasil!`;
-              console.log(`📋 ${user.name}: Row hari ini tidak ditemukan di tabel`);
             }
           }
         } catch (verifyError) {
