@@ -1,0 +1,39 @@
+{
+  "name": "skemaraja-auto-checkin",
+  "main": "_worker.js",
+  "compatibility_date": "2024-01-01",
+  // Konfigurasi KV Namespace untuk menyimpan config dan logs
+  // Buat KV Namespace di Cloudflare Dashboard terlebih dahulu:
+  // 1. Login ke Cloudflare Dashboard
+  // 2. Pilih Workers & Pages → KV
+  // 3. Create a namespace dengan nama "CHECKIN_KV"
+  // 4. Copy ID dan paste di bawah ini
+  "kv_namespaces": [
+    {
+      "binding": "CHECKIN_KV",
+      "id": "YOUR_KV_NAMESPACE_ID"
+    }
+  ],
+  // Jadwal Cron Triggers (dalam UTC)
+  // WITA (Gorontalo) = UTC + 8 jam
+  // 
+  // Jadwal Check-in:
+  // - Pagi  07:30 WITA = 23:30 UTC (hari sebelumnya)
+  // - Siang 12:30 WITA = 04:30 UTC
+  // - Sore  16:30 WITA = 08:30 UTC
+  //
+  // Format: menit jam * * hari (1-5 = Senin-Jumat)
+  "triggers": {
+    "crons": [
+      "30 23 * * 0-4",
+      "30 4 * * 1-5",
+      "30 8 * * 1-5"
+    ]
+  },
+  // Environment Variables (opsional)
+  // Bisa diisi via Cloudflare Dashboard → Worker → Settings → Variables
+  // JANGAN commit file ini dengan kredensial asli!
+  "vars": {
+    "AUTH_PASSWORD": "admin123"
+  }
+}
