@@ -735,14 +735,18 @@ async function handleDashboard(env, corsHeaders) {
       const formData = new FormData(document.getElementById('configForm'));
       const users = [];
       
-      // Collect users dynamically
+      // Collect users dynamically - directly query inputs inside each card
       document.querySelectorAll('.user-card').forEach((card) => {
-        const idx = card.dataset.index;
+        const nameInput = card.querySelector('input[name$="_name"]');
+        const nipInput = card.querySelector('input[name$="_nip"]');
+        const passwordInput = card.querySelector('input[name$="_password"]');
+        const enabledInput = card.querySelector('input[name$="_enabled"]');
+        
         users.push({
-          name: formData.get(\`user_\${idx}_name\`) || 'User',
-          nip: formData.get(\`user_\${idx}_nip\`) || '',
-          password: formData.get(\`user_\${idx}_password\`) || '',
-          enabled: formData.get(\`user_\${idx}_enabled\`) === 'on'
+          name: nameInput ? nameInput.value : 'User',
+          nip: nipInput ? nipInput.value : '',
+          password: passwordInput ? passwordInput.value : '',
+          enabled: enabledInput ? enabledInput.checked : false
         });
       });
       
@@ -1025,12 +1029,32 @@ async function handleSaveConfig(request, env, corsHeaders) {
 async function handleManualCheckin(request, env, corsHeaders) {
   const config = await getConfig(env);
 
-  // Gunakan jadwal pertama yang aktif
-  const activeSchedule = config.schedules.find(s => s.enabled) || {
-    name: "Manual",
-    status_wfh: "2",
-    shift: "1"
-  };
+  // Dapatkan jam saat ini dalam WITA (UTC+8)
+  const now = new Date();
+  const witaOffset = 8 * 60; // menit
+  const witaTime = new Date(now.getTime() + (witaOffset + now.getTimezoneOffset()) * 60000);
+  const currentHour = witaTime.getHours();
+
+  // Pilih jadwal berdasarkan jam saat ini
+  // 07:00 - 11:59 = Pagi
+  // 12:00 - 15:59 = Siang  
+  // 16:00 - 23:59 = Sore
+  let activeSchedule;
+  if (currentHour >= 7 && currentHour < 12) {
+    activeSchedule = config.schedules.find(s => s.name === "Pagi") || config.schedules[0];
+  } else if (currentHour >= 12 && currentHour < 16) {
+    activeSchedule = config.schedules.find(s => s.name === "Siang") || config.schedules[1];
+  } else if (currentHour >= 16 && currentHour <= 23) {
+    activeSchedule = config.schedules.find(s => s.name === "Sore") || config.schedules[2];
+  } else {
+    // Di luar jam kerja (00:00 - 06:59), gunakan jadwal pertama
+    activeSchedule = config.schedules[0];
+  }
+
+  // Fallback jika tidak ada jadwal
+  if (!activeSchedule) {
+    activeSchedule = { name: "Manual", status_wfh: "2", shift: "1" };
+  }
 
   const results = [];
 
@@ -1047,8 +1071,10 @@ async function handleManualCheckin(request, env, corsHeaders) {
 
   return new Response(JSON.stringify({
     success: allSuccess,
-    message: allSuccess ? "✅ Semua check-in berhasil!" : "⚠️ Beberapa check-in gagal",
-    results: results
+    message: allSuccess ? `✅ Semua check-in ${activeSchedule.name} berhasil!` : `⚠️ Beberapa check-in ${activeSchedule.name} gagal`,
+    results: results,
+    schedule: activeSchedule.name,
+    witaHour: currentHour
   }), {
     headers: { ...corsHeaders, "Content-Type": "application/json" }
   });
@@ -1058,15 +1084,35 @@ async function handleCheckinSingleUser(request, env, corsHeaders) {
   const config = await getConfig(env);
   const { user } = await request.json();
 
-  const activeSchedule = config.schedules.find(s => s.enabled) || {
-    name: "Manual",
-    status_wfh: "2",
-    shift: "1"
-  };
+  // Dapatkan jam saat ini dalam WITA (UTC+8)
+  const now = new Date();
+  const witaOffset = 8 * 60;
+  const witaTime = new Date(now.getTime() + (witaOffset + now.getTimezoneOffset()) * 60000);
+  const currentHour = witaTime.getHours();
+
+  // Pilih jadwal berdasarkan jam saat ini
+  let activeSchedule;
+  if (currentHour >= 7 && currentHour < 12) {
+    activeSchedule = config.schedules.find(s => s.name === "Pagi") || config.schedules[0];
+  } else if (currentHour >= 12 && currentHour < 16) {
+    activeSchedule = config.schedules.find(s => s.name === "Siang") || config.schedules[1];
+  } else if (currentHour >= 16 && currentHour <= 23) {
+    activeSchedule = config.schedules.find(s => s.name === "Sore") || config.schedules[2];
+  } else {
+    activeSchedule = config.schedules[0];
+  }
+
+  if (!activeSchedule) {
+    activeSchedule = { name: "Manual", status_wfh: "2", shift: "1" };
+  }
 
   const result = await performCheckin(config, activeSchedule, user, env);
 
-  return new Response(JSON.stringify(result), {
+  return new Response(JSON.stringify({
+    ...result,
+    schedule: activeSchedule.name,
+    witaHour: currentHour
+  }), {
     headers: { ...corsHeaders, "Content-Type": "application/json" }
   });
 }
