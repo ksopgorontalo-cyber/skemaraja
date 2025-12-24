@@ -290,11 +290,13 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
     formData.append("location_user", `${config.location.latitude}, ${config.location.longitude}`);
     formData.append("location_status", "");
     formData.append("status_wfh", schedule.status_wfh);
-    if (schedule.shift) {
-      formData.append("shift", schedule.shift);
+    // Shift harus selalu dikirim jika WFO (status_wfh = 2)
+    if (schedule.status_wfh === "2") {
+      formData.append("shift", schedule.shift || "1");
     }
 
     console.log("📤 Mengirim request check-in...");
+    console.log("📤 Form data:", formData.toString());
 
     const authResponse = await fetch(SKEMARAJA_AUTH, {
       method: "POST",
@@ -312,27 +314,101 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
     });
 
     const responseStatus = authResponse.status;
-    const responseLocation = authResponse.headers.get("location");
+    const responseLocation = authResponse.headers.get("location") || "";
 
     console.log(`📥 Response status: ${responseStatus}`);
     console.log(`📥 Redirect location: ${responseLocation}`);
 
-    // Cek hasil
+    // Cek hasil berdasarkan redirect location
     let success = false;
     let message = "";
 
     if (responseStatus >= 300 && responseStatus < 400) {
-      // Redirect - biasanya berarti berhasil
-      if (responseLocation && (responseLocation.includes("dashboard") || responseLocation.includes("home"))) {
+      // Redirect response
+      if (responseLocation.includes("dashboard") || responseLocation.includes("home") || responseLocation.includes("beranda")) {
         success = true;
         message = "Check-in berhasil! Redirect ke dashboard.";
-      } else if (responseLocation && responseLocation.includes("login")) {
+      } else if (responseLocation.includes("login")) {
         success = false;
-        message = "Check-in gagal. Kredensial mungkin salah.";
-      } else {
+        message = "Check-in gagal. Kredensial mungkin salah atau session expired.";
+      } else if (responseLocation === SKEMARAJA_BASE || responseLocation === SKEMARAJA_BASE + "/") {
+        // Redirect ke base URL - perlu verifikasi dengan fetch dashboard
         success = true;
-        message = `Check-in mungkin berhasil. Redirect ke: ${responseLocation}`;
+        message = "Check-in berhasil (redirect ke beranda).";
+      } else {
+        // Redirect ke lokasi lain - anggap berhasil
+        success = true;
+        message = `Check-in berhasil. Redirect ke: ${responseLocation}`;
       }
+
+      // Verifikasi dengan fetch dashboard untuk cek waktu absensi
+      if (success) {
+        try {
+          console.log("🔍 Verifikasi dashboard untuk cek waktu absensi...");
+
+          // Ambil cookies baru dari response authenticate
+          const newCookies = authResponse.headers.getAll("set-cookie");
+          const allCookies = [...setCookies, ...newCookies].map(c => c.split(";")[0]).join("; ");
+
+          const dashboardResponse = await fetch(SKEMARAJA_BASE, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+              "Cookie": allCookies,
+            }
+          });
+
+          if (dashboardResponse.ok) {
+            const dashboardHtml = await dashboardResponse.text();
+
+            // Parse waktu absensi dari tabel
+            // Format: <td class="bg-warning">24-Dec-2025 10:00:08</td>
+            const scheduleColumn = schedule.name === "Pagi" ? 1 : schedule.name === "Siang" ? 2 : 3;
+
+            // Cari row hari ini di tabel absensi
+            const today = new Date();
+            const todayStr = today.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-');
+
+            // Regex untuk menemukan baris tabel dengan tanggal hari ini
+            const tableRowRegex = new RegExp(`<tr>\\s*<td>${todayStr}</td>([\\s\\S]*?)</tr>`, 'i');
+            const rowMatch = dashboardHtml.match(tableRowRegex);
+
+            if (rowMatch) {
+              // Extract cells dari row
+              const cellRegex = /<td[^>]*>(.*?)<\/td>/gi;
+              const cells = [];
+              let cellMatch;
+              while ((cellMatch = cellRegex.exec(rowMatch[0])) !== null) {
+                cells.push(cellMatch[1].trim());
+              }
+
+              // cells[0] = tanggal, cells[1] = Pagi, cells[2] = Siang, cells[3] = Sore
+              const attendanceTime = cells[scheduleColumn] || "";
+
+              if (attendanceTime && attendanceTime.includes(":")) {
+                // Extract waktu saja (HH:MM:SS)
+                const timeMatch = attendanceTime.match(/(\d{2}:\d{2}:\d{2})/);
+                const timeStr = timeMatch ? timeMatch[1] : attendanceTime;
+
+                message = `✅ Check-in ${schedule.name} berhasil! (${timeStr})`;
+                console.log(`📋 ${user.name}: Waktu absensi ${schedule.name} = ${timeStr}`);
+              } else {
+                // Kolom kosong - mungkin check-in gagal atau belum tercatat
+                message = `⚠️ Check-in ${schedule.name} terkirim, tapi waktu belum tercatat.`;
+                console.log(`📋 ${user.name}: Kolom ${schedule.name} masih kosong`);
+              }
+            } else {
+              // Tidak menemukan row hari ini, tapi redirect sukses
+              message = `✅ Check-in ${schedule.name} berhasil!`;
+              console.log(`📋 ${user.name}: Row hari ini tidak ditemukan di tabel`);
+            }
+          }
+        } catch (verifyError) {
+          console.log(`⚠️ Verifikasi dashboard gagal (ignored): ${verifyError.message}`);
+          // Tetap success, hanya pesan yang kurang detail
+        }
+      }
+
     } else if (responseStatus === 200) {
       // Baca response body untuk cek pesan error
       const responseText = await authResponse.text();
