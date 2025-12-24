@@ -387,11 +387,34 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
 
               if (attendanceTime && attendanceTime.includes(":")) {
                 // Extract waktu saja (HH:MM:SS)
-                const timeMatch = attendanceTime.match(/(\d{2}:\d{2}:\d{2})/);
-                const timeStr = timeMatch ? timeMatch[1] : attendanceTime;
+                const timeMatch = attendanceTime.match(/(\d{2}):(\d{2}):(\d{2})/);
 
-                message = `✅ Check-in ${schedule.name} berhasil! (${timeStr})`;
-                console.log(`📋 ${user.name}: Waktu absensi ${schedule.name} = ${timeStr}`);
+                if (timeMatch) {
+                  const recordedHour = parseInt(timeMatch[1]);
+                  const recordedMinute = parseInt(timeMatch[2]);
+                  const recordedSecond = parseInt(timeMatch[3]);
+                  const timeStr = `${timeMatch[1]}:${timeMatch[2]}:${timeMatch[3]}`;
+
+                  // Bandingkan dengan waktu saat ini (WITA)
+                  const nowWita = new Date(today.getTime() + (8 * 60 + today.getTimezoneOffset()) * 60000);
+                  const currentMinutes = nowWita.getHours() * 60 + nowWita.getMinutes();
+                  const recordedMinutes = recordedHour * 60 + recordedMinute;
+
+                  // Jika selisih lebih dari 5 menit, berarti check-in lama (sudah ada sebelumnya)
+                  const timeDiff = Math.abs(currentMinutes - recordedMinutes);
+
+                  if (timeDiff > 5) {
+                    // Check-in sudah ada sebelumnya
+                    message = `ℹ️ Sudah check-in ${schedule.name} sebelumnya (${timeStr})`;
+                    console.log(`📋 ${user.name}: Sudah check-in ${schedule.name} pada ${timeStr}, selisih ${timeDiff} menit`);
+                  } else {
+                    // Check-in baru (selisih < 5 menit)
+                    message = `✅ Check-in ${schedule.name} berhasil! (${timeStr})`;
+                    console.log(`📋 ${user.name}: Check-in ${schedule.name} baru berhasil pada ${timeStr}`);
+                  }
+                } else {
+                  message = `✅ Check-in ${schedule.name} berhasil!`;
+                }
               } else {
                 // Kolom kosong - mungkin check-in gagal atau belum tercatat
                 message = `⚠️ Check-in ${schedule.name} terkirim, tapi waktu belum tercatat.`;
