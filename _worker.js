@@ -566,7 +566,7 @@ async function handleDashboard(env, corsHeaders) {
     <div class="card">
       <h2>👥 Daftar User</h2>
       
-      ${config.users.length === 0 || !config.users[0].nip ? '<div class="alert alert-warning">⚠️ Belum ada user yang dikonfigurasi. Tambahkan user di bawah.</div>' : ''}
+      ${config.users.length === 0 || !config.users.some(u => u.nip) ? '<div class="alert alert-warning">⚠️ Belum ada user yang dikonfigurasi. Tambahkan user di bawah.</div>' : ''}
       
       <form id="configForm">
         <div id="usersList">
@@ -579,7 +579,7 @@ async function handleDashboard(env, corsHeaders) {
                     <input type="checkbox" name="user_${i}_enabled" ${user.enabled ? 'checked' : ''}>
                     <span class="slider"></span>
                   </label>
-                  ${i > 0 ? `<button type="button" class="btn btn-danger btn-sm" onclick="removeUser(${i})">🗑️</button>` : ''}
+                  <button type="button" class="btn btn-danger btn-sm" onclick="removeUser(${i})">🗑️</button>
                 </div>
               </div>
               <div class="grid">
