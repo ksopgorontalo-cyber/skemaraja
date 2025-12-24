@@ -101,6 +101,9 @@ export default {
       if (path === "/clear-logs" && request.method === "POST") {
         return handleClearLogs(env, corsHeaders);
       }
+      if (path === "/pegawai") {
+        return handleGetPegawai(request, corsHeaders);
+      }
 
       return new Response("Not Found", { status: 404, headers: corsHeaders });
     } catch (error) {
@@ -307,32 +310,39 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
     let message = "";
 
     if (responseStatus >= 300 && responseStatus < 400) {
-      // Redirect - biasanya berarti berhasil
+      // Redirect - cek kemana redirectnya
       if (responseLocation && (responseLocation.includes("dashboard") || responseLocation.includes("home"))) {
+        // Redirect ke dashboard = berhasil login, tapi perlu verifikasi check-in
         success = true;
         message = "Check-in berhasil! Redirect ke dashboard.";
       } else if (responseLocation && responseLocation.includes("login")) {
         success = false;
-        message = "Check-in gagal. Kredensial mungkin salah.";
+        message = "Check-in gagal. Redirect kembali ke login - kredensial salah.";
       } else {
-        success = true;
-        message = `Check-in mungkin berhasil. Redirect ke: ${responseLocation}`;
+        // Redirect ke tempat lain - anggap gagal, jangan asumsikan berhasil
+        success = false;
+        message = `Check-in tidak jelas. Redirect ke: ${responseLocation}`;
       }
     } else if (responseStatus === 200) {
-      // Baca response body untuk cek pesan error
+      // Baca response body untuk cek pesan
       const responseText = await authResponse.text();
-      if (responseText.includes("berhasil") || responseText.includes("success")) {
+      console.log(`📥 Response body (first 500 chars): ${responseText.substring(0, 500)}`);
+
+      if (responseText.includes("berhasil") || responseText.includes("success") || responseText.includes("Selamat datang")) {
         success = true;
         message = "Check-in berhasil!";
-      } else if (responseText.includes("sudah check") || responseText.includes("already")) {
+      } else if (responseText.includes("sudah check") || responseText.includes("already") || responseText.includes("Anda sudah")) {
         success = true;
         message = "Sudah check-in sebelumnya hari ini.";
-      } else if (responseText.includes("password") || responseText.includes("salah")) {
+      } else if (responseText.includes("password") || responseText.includes("salah") || responseText.includes("invalid")) {
         success = false;
         message = "NIP atau password salah.";
+      } else if (responseText.includes("lokasi") || responseText.includes("location")) {
+        success = false;
+        message = "Check-in gagal. Masalah lokasi.";
       } else {
         success = false;
-        message = "Check-in gagal. Periksa kredensial.";
+        message = "Check-in gagal. Response tidak dikenali.";
       }
     } else {
       // Retry untuk error 5xx
@@ -586,7 +596,10 @@ async function handleDashboard(env, corsHeaders) {
           `).join('')}
         </div>
         
-        <button type="button" class="btn btn-primary" onclick="addUser()" style="margin-top: 12px">➕ Tambah User</button>
+        <div style="margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap;">
+          <button type="button" class="btn btn-primary" onclick="addUser()">➕ Tambah User</button>
+          <button type="button" class="btn btn-success" onclick="showImportModal()">📥 Import Pegawai KSOP</button>
+        </div>
 
         <!-- Location -->
         <h3>📍 Lokasi</h3>
@@ -837,9 +850,137 @@ async function handleDashboard(env, corsHeaders) {
         alert('Error: ' + err.message);
       }
     }
+
+    // Import Pegawai Functions
+    let pegawaiList = [];
+    
+    async function showImportModal() {
+      document.getElementById('importModal').style.display = 'flex';
+      document.getElementById('pegawaiList').innerHTML = '<p style="text-align:center;padding:20px;">⏳ Loading pegawai...</p>';
+      
+      try {
+        const res = await fetch('/pegawai');
+        const data = await res.json();
+        
+        if (data.success) {
+          pegawaiList = data.pegawai;
+          renderPegawaiList(pegawaiList);
+        } else {
+          document.getElementById('pegawaiList').innerHTML = '<p style="color:red;padding:20px;">❌ ' + data.message + '</p>';
+        }
+      } catch (err) {
+        document.getElementById('pegawaiList').innerHTML = '<p style="color:red;padding:20px;">❌ Error: ' + err.message + '</p>';
+      }
+    }
+
+    function hideImportModal() {
+      document.getElementById('importModal').style.display = 'none';
+    }
+
+    function renderPegawaiList(list) {
+      const container = document.getElementById('pegawaiList');
+      container.innerHTML = list.map((p, i) => \`
+        <div style="display:flex; align-items:center; padding:10px; border-bottom:1px solid #eee;">
+          <input type="checkbox" id="peg_\${i}" value="\${p.nip}" data-name="\${p.name}" style="margin-right:12px; width:18px; height:18px;">
+          <label for="peg_\${i}" style="cursor:pointer; flex:1;">
+            <strong>\${p.name}</strong><br>
+            <small style="color:#666;">NIP: \${p.nip}</small>
+          </label>
+        </div>
+      \`).join('');
+    }
+
+    function filterPegawai() {
+      const search = document.getElementById('searchPegawai').value.toLowerCase();
+      const filtered = pegawaiList.filter(p => 
+        p.name.toLowerCase().includes(search) || p.nip.includes(search)
+      );
+      renderPegawaiList(filtered);
+    }
+
+    function selectAllPegawai() {
+      document.querySelectorAll('#pegawaiList input[type=checkbox]').forEach(cb => cb.checked = true);
+    }
+
+    function deselectAllPegawai() {
+      document.querySelectorAll('#pegawaiList input[type=checkbox]').forEach(cb => cb.checked = false);
+    }
+
+    function importSelected() {
+      const selected = [];
+      document.querySelectorAll('#pegawaiList input[type=checkbox]:checked').forEach(cb => {
+        selected.push({ nip: cb.value, name: cb.dataset.name });
+      });
+      
+      if (selected.length === 0) {
+        alert('Pilih minimal 1 pegawai!');
+        return;
+      }
+      
+      // Password default = NIP
+      selected.forEach(p => {
+        addUserWithData(p.name, p.nip, p.nip);
+      });
+      
+      hideImportModal();
+      showResult('success', '✅ ' + selected.length + ' pegawai berhasil diimport! Password default = NIP. Simpan untuk menyimpan.');
+    }
+
+    function addUserWithData(name, nip, password) {
+      const usersList = document.getElementById('usersList');
+      const newUser = document.createElement('div');
+      newUser.className = 'user-card';
+      newUser.dataset.index = userCount;
+      newUser.innerHTML = \`
+        <div class="user-header">
+          <span class="user-name">\${name}</span>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <label class="toggle">
+              <input type="checkbox" name="user_\${userCount}_enabled" checked>
+              <span class="slider"></span>
+            </label>
+            <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.user-card').remove()">🗑️</button>
+          </div>
+        </div>
+        <div class="grid">
+          <div class="form-group">
+            <label>Nama</label>
+            <input type="text" name="user_\${userCount}_name" value="\${name}" placeholder="Nama User">
+          </div>
+          <div class="form-group">
+            <label>NIP</label>
+            <input type="text" name="user_\${userCount}_nip" value="\${nip}" placeholder="NIP">
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" name="user_\${userCount}_password" value="\${password}" placeholder="Password">
+          </div>
+        </div>
+        <button type="button" class="btn btn-success btn-sm" onclick="checkinUser(\${userCount})">🚀 Check-in User Ini</button>
+      \`;
+      usersList.appendChild(newUser);
+      userCount++;
+    }
   </script>
+
+  <!-- Import Modal -->
+  <div id="importModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+    <div style="background:white; border-radius:16px; padding:24px; max-width:600px; width:90%; max-height:80vh; overflow:hidden; display:flex; flex-direction:column;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h2 style="margin:0; color:#1e3c72;">📥 Import Pegawai KSOP</h2>
+        <button onclick="hideImportModal()" style="background:none; border:none; font-size:24px; cursor:pointer;">✕</button>
+      </div>
+      <input type="text" id="searchPegawai" placeholder="🔍 Cari nama atau NIP..." oninput="filterPegawai()" style="width:100%; padding:12px; border:2px solid #e0e0e0; border-radius:8px; margin-bottom:12px;">
+      <div style="margin-bottom:12px; display:flex; gap:10px;">
+        <button type="button" onclick="selectAllPegawai()" style="padding:8px 16px; background:#1e3c72; color:white; border:none; border-radius:6px; cursor:pointer;">Pilih Semua</button>
+        <button type="button" onclick="deselectAllPegawai()" style="padding:8px 16px; background:#ccc; color:#333; border:none; border-radius:6px; cursor:pointer;">Batal Pilih</button>
+      </div>
+      <div id="pegawaiList" style="flex:1; overflow-y:auto; border:1px solid #e0e0e0; border-radius:8px; max-height:300px;"></div>
+      <button type="button" onclick="importSelected()" style="margin-top:16px; width:100%; padding:14px; background:linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color:white; border:none; border-radius:8px; font-size:16px; font-weight:600; cursor:pointer;">✅ Import Pegawai Terpilih</button>
+    </div>
+  </div>
 </body>
-</html>`;
+</html>\`;
 
   return new Response(html, {
     headers: { ...corsHeaders, "Content-Type": "text/html; charset=utf-8" }
@@ -870,7 +1011,7 @@ async function handleSaveConfig(request, env, corsHeaders) {
       await addLog(env, {
         timestamp: new Date().toISOString(),
         type: "success",
-        message: `Konfigurasi disimpan (${config.users.length} users)`
+        message: `Konfigurasi disimpan (${ config.users.length } users)`
       });
       return new Response(JSON.stringify({ success: true, message: "✅ Konfigurasi berhasil disimpan!" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
@@ -940,40 +1081,40 @@ async function handleCheckinSingleUser(request, env, corsHeaders) {
 async function handleGetLogs(env, corsHeaders) {
   const logs = await getLogs(env);
 
-  const html = `<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Logs - SKEMARAJA Auto Check-in</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-      min-height: 100vh;
-      padding: 20px;
+  const html = `\u003c!DOCTYPE html\u003e
+    <html lang="id">
+      <head>
+        <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Logs - SKEMARAJA Auto Check-in</title>
+            <style>
+              * {margin: 0; padding: 0; box-sizing: border-box; }
+              body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+              background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+              min-height: 100vh;
+              padding: 20px;
     }
-    .container { max-width: 900px; margin: 0 auto; }
-    .card { background: white; border-radius: 16px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
-    h1 { color: white; text-align: center; margin-bottom: 20px; }
-    .log-item { padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid; }
-    .log-success { background: #f0fdf4; border-color: #22c55e; }
-    .log-error { background: #fef2f2; border-color: #ef4444; }
-    .log-time { font-size: 12px; color: #666; }
-    .log-message { margin-top: 4px; }
-    .log-user { font-weight: 600; color: #1e3c72; }
-    .back-link { display: inline-block; margin-bottom: 20px; color: white; text-decoration: none; }
-    .back-link:hover { text-decoration: underline; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <a href="/" class="back-link">← Kembali ke Dashboard</a>
-    <h1>📜 Log Check-in</h1>
-    <div class="card">
-      ${logs.length === 0 ? '<p style="color: #666; text-align: center">Belum ada log</p>' :
-      logs.map(log => `
+              .container {max-width: 900px; margin: 0 auto; }
+              .card {background: white; border-radius: 16px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+              h1 {color: white; text-align: center; margin-bottom: 20px; }
+              .log-item {padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid; }
+              .log-success {background: #f0fdf4; border-color: #22c55e; }
+              .log-error {background: #fef2f2; border-color: #ef4444; }
+              .log-time {font-size: 12px; color: #666; }
+              .log-message {margin-top: 4px; }
+              .log-user {font-weight: 600; color: #1e3c72; }
+              .back-link {display: inline-block; margin-bottom: 20px; color: white; text-decoration: none; }
+              .back-link:hover {text-decoration: underline; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <a href="/" class="back-link">← Kembali ke Dashboard</a>
+              <h1>📜 Log Check-in</h1>
+              <div class="card">
+                ${logs.length === 0 ? '<p style="color: #666; text-align: center">Belum ada log</p>' :
+                  logs.map(log => `
           <div class="log-item log-${log.type}">
             <div class="log-time">${new Date(log.timestamp).toLocaleString('id-ID')}</div>
             <div class="log-message">
@@ -983,181 +1124,222 @@ async function handleGetLogs(env, corsHeaders) {
             </div>
           </div>
         `).join('')
-    }
-    </div>
-  </div>
-</body>
-</html>`;
+                }
+              </div>
+            </div>
+          </body>
+        </html>`;
 
-  return new Response(html, {
-    headers: { ...corsHeaders, "Content-Type": "text/html; charset=utf-8" }
+        return new Response(html, {
+          headers: {...corsHeaders, "Content-Type": "text/html; charset=utf-8" }
   });
 }
 
-async function handleTestConnection(env, corsHeaders) {
+        async function handleTestConnection(env, corsHeaders) {
   try {
     const response = await fetch(SKEMARAJA_LOGIN, {
-      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
+          headers: {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
     });
 
-    if (response.ok) {
+        if (response.ok) {
       const html = await response.text();
-      const hasToken = html.includes('_token');
-      return new Response(JSON.stringify({
-        success: true,
+        const hasToken = html.includes('_token');
+        return new Response(JSON.stringify({
+          success: true,
         message: `✅ Koneksi ke SKEMARAJA berhasil! Status: ${response.status}, CSRF Token: ${hasToken ? 'Ditemukan' : 'Tidak ditemukan'}`
       }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
+          headers: {...corsHeaders, "Content-Type": "application/json" }
       });
     } else {
       return new Response(JSON.stringify({
-        success: false,
+          success: false,
         message: `⚠️ SKEMARAJA merespons dengan status: ${response.status}`
       }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
+          headers: {...corsHeaders, "Content-Type": "application/json" }
       });
     }
   } catch (error) {
     return new Response(JSON.stringify({
-      success: false,
-      message: `❌ Gagal terhubung: ${error.message}`
+          success: false,
+        message: `❌ Gagal terhubung: ${error.message}`
     }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
+          headers: {...corsHeaders, "Content-Type": "application/json" }
     });
   }
 }
 
-async function handleClearLogs(env, corsHeaders) {
+        async function handleClearLogs(env, corsHeaders) {
   if (env.CHECKIN_KV) {
-    await env.CHECKIN_KV.put("logs", JSON.stringify([]));
+          await env.CHECKIN_KV.put("logs", JSON.stringify([]));
   }
-  return new Response(JSON.stringify({ success: true }), {
-    headers: { ...corsHeaders, "Content-Type": "application/json" }
+        return new Response(JSON.stringify({success: true }), {
+          headers: {...corsHeaders, "Content-Type": "application/json" }
   });
 }
 
-// ============================================================================
-// Authentication Functions
-// ============================================================================
-function isAuthenticated(request, password) {
+        async function handleGetPegawai(request, corsHeaders) {
+  const url = new URL(request.url);
+        const kodeKantor = url.searchParams.get("kode_kantor") || "004036057000000";
+
+        try {
+    const response = await fetch(`https://skemaraja.dephub.go.id/api/pegawaiSelect?kode_kantor=${kodeKantor}`, {
+          headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json",
+      }
+    });
+
+        if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+        const data = await response.json();
+
+    // Transform data untuk kebutuhan kita
+    const pegawai = data.results.map(p => ({
+          nip: p.id,
+        name: p.text
+    }));
+
+        return new Response(JSON.stringify({
+          success: true,
+        pegawai: pegawai,
+        total: pegawai.length
+    }), {
+          headers: {...corsHeaders, "Content-Type": "application/json" }
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({
+          success: false,
+        message: `Gagal mengambil data pegawai: ${error.message}`
+    }), {
+          headers: {...corsHeaders, "Content-Type": "application/json" }
+    });
+  }
+}
+
+        // ============================================================================
+        // Authentication Functions
+        // ============================================================================
+        function isAuthenticated(request, password) {
   const cookies = request.headers.get("Cookie") || "";
   const authCookie = cookies.split(";").find(c => c.trim().startsWith(AUTH_COOKIE_NAME + "="));
-  if (!authCookie) return false;
+        if (!authCookie) return false;
 
-  const cookieValue = authCookie.split("=")[1];
-  // Simple hash check - password hashed with timestamp prefix
-  const expectedHash = btoa(password);
-  return cookieValue === expectedHash;
+        const cookieValue = authCookie.split("=")[1];
+        // Simple hash check - password hashed with timestamp prefix
+        const expectedHash = btoa(password);
+        return cookieValue === expectedHash;
 }
 
-function handleLoginPage(corsHeaders, error = "") {
+        function handleLoginPage(corsHeaders, error = "") {
   const html = `<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Login - SKEMARAJA Auto Check-in</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
+        <html lang="id">
+          <head>
+            <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Login - SKEMARAJA Auto Check-in</title>
+                <style>
+                  * {margin: 0; padding: 0; box-sizing: border-box; }
+                  body {
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                  background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+                  min-height: 100vh;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  padding: 20px;
     }
-    .login-card {
-      background: white;
-      border-radius: 16px;
-      padding: 40px;
-      width: 100%;
-      max-width: 400px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                  .login-card {
+                    background: white;
+                  border-radius: 16px;
+                  padding: 40px;
+                  width: 100%;
+                  max-width: 400px;
+                  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
     }
-    h1 {
-      color: #1e3c72;
-      text-align: center;
-      margin-bottom: 30px;
-      font-size: 1.8rem;
+                  h1 {
+                    color: #1e3c72;
+                  text-align: center;
+                  margin-bottom: 30px;
+                  font-size: 1.8rem;
     }
-    .form-group { margin-bottom: 20px; }
-    label { display: block; margin-bottom: 8px; font-weight: 600; color: #555; }
-    input {
-      width: 100%;
-      padding: 14px;
-      border: 2px solid #e0e0e0;
-      border-radius: 8px;
-      font-size: 16px;
-      transition: border-color 0.3s;
+                  .form-group {margin-bottom: 20px; }
+                  label {display: block; margin-bottom: 8px; font-weight: 600; color: #555; }
+                  input {
+                    width: 100%;
+                  padding: 14px;
+                  border: 2px solid #e0e0e0;
+                  border-radius: 8px;
+                  font-size: 16px;
+                  transition: border-color 0.3s;
     }
-    input:focus { outline: none; border-color: #1e3c72; }
-    .btn {
-      width: 100%;
-      padding: 14px;
-      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.3s;
+                  input:focus {outline: none; border-color: #1e3c72; }
+                  .btn {
+                    width: 100%;
+                  padding: 14px;
+                  background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+                  color: white;
+                  border: none;
+                  border-radius: 8px;
+                  font-size: 16px;
+                  font-weight: 600;
+                  cursor: pointer;
+                  transition: all 0.3s;
     }
-    .btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 20px rgba(30, 60, 114, 0.4);
+                  .btn:hover {
+                    transform: translateY(-2px);
+                  box-shadow: 0 8px 20px rgba(30, 60, 114, 0.4);
     }
-    .error {
-      background: #f8d7da;
-      color: #721c24;
-      padding: 12px;
-      border-radius: 8px;
-      margin-bottom: 20px;
-      text-align: center;
+                  .error {
+                    background: #f8d7da;
+                  color: #721c24;
+                  padding: 12px;
+                  border-radius: 8px;
+                  margin-bottom: 20px;
+                  text-align: center;
     }
-    .logo { text-align: center; margin-bottom: 20px; font-size: 48px; }
-  </style>
-</head>
-<body>
-  <div class="login-card">
-    <div class="logo">🔐</div>
-    <h1>SKEMARAJA Auto Check-in</h1>
-    ${error ? `<div class="error">${error}</div>` : ''}
-    <form method="POST" action="/login">
-      <div class="form-group">
-        <label for="password">Password</label>
-        <input type="password" id="password" name="password" placeholder="Masukkan password" required autofocus>
-      </div>
-      <button type="submit" class="btn">🔓 Login</button>
-    </form>
-  </div>
-</body>
-</html>`;
+                  .logo {text-align: center; margin-bottom: 20px; font-size: 48px; }
+                </style>
+              </head>
+              <body>
+                <div class="login-card">
+                  <div class="logo">🔐</div>
+                  <h1>SKEMARAJA Auto Check-in</h1>
+                  ${error ? `<div class="error">${error}</div>` : ''}
+                  <form method="POST" action="/login">
+                    <div class="form-group">
+                      <label for="password">Password</label>
+                      <input type="password" id="password" name="password" placeholder="Masukkan password" required autofocus>
+                    </div>
+                    <button type="submit" class="btn">🔓 Login</button>
+                  </form>
+                </div>
+              </body>
+            </html>`;
 
-  return new Response(html, {
-    headers: { ...corsHeaders, "Content-Type": "text/html; charset=utf-8" }
+            return new Response(html, {
+              headers: {...corsHeaders, "Content-Type": "text/html; charset=utf-8" }
   });
 }
 
-async function handleLogin(request, env, corsHeaders) {
+            async function handleLogin(request, env, corsHeaders) {
   const formData = await request.formData();
-  const password = formData.get("password") || "";
+            const password = formData.get("password") || "";
 
-  const authPassword = env.AUTH_PASSWORD || AUTH_PASSWORD;
+            const authPassword = env.AUTH_PASSWORD || AUTH_PASSWORD;
 
-  if (password === authPassword) {
+            if (password === authPassword) {
     // Login berhasil - set cookie
     const hash = btoa(authPassword);
-    const cookie = `${AUTH_COOKIE_NAME}=${hash}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400`; // 24 jam
+            const cookie = `${AUTH_COOKIE_NAME}=${hash}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400`; // 24 jam
 
-    return new Response(null, {
-      status: 302,
-      headers: {
-        ...corsHeaders,
-        "Location": "/",
-        "Set-Cookie": cookie
+            return new Response(null, {
+              status: 302,
+            headers: {
+              ...corsHeaders,
+              "Location": "/",
+            "Set-Cookie": cookie
       }
     });
   } else {
@@ -1166,16 +1348,16 @@ async function handleLogin(request, env, corsHeaders) {
   }
 }
 
-function handleLogout(corsHeaders) {
+            function handleLogout(corsHeaders) {
   // Hapus cookie
   const cookie = `${AUTH_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`;
 
-  return new Response(null, {
-    status: 302,
-    headers: {
-      ...corsHeaders,
-      "Location": "/login",
-      "Set-Cookie": cookie
+            return new Response(null, {
+              status: 302,
+            headers: {
+              ...corsHeaders,
+              "Location": "/login",
+            "Set-Cookie": cookie
     }
   });
 }
