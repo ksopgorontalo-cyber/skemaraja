@@ -318,18 +318,31 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
     const responseLocation = authResponse.headers.get("location") || "";
 
     // Gabungkan cookies dari login page + authenticate response
+    // PENTING: Auth cookies harus REPLACE login cookies dengan nama sama!
     const authCookies = authResponse.headers.getAll("set-cookie");
     console.log(`🍪 Login cookies count: ${setCookies.length}`);
     console.log(`🍪 Auth response cookies count: ${authCookies.length}`);
 
-    // Log nama-nama cookie untuk debug
-    const loginCookieNames = setCookies.map(c => c.split("=")[0]).join(", ");
-    const authCookieNames = authCookies.map(c => c.split("=")[0]).join(", ");
-    console.log(`🍪 Login cookie names: ${loginCookieNames}`);
-    console.log(`🍪 Auth cookie names: ${authCookieNames}`);
+    // Merge cookies by name - auth cookies override login cookies
+    const cookieMap = new Map();
 
-    const allCookies = [...setCookies, ...authCookies].map(c => c.split(";")[0]).join("; ");
+    // First add login cookies
+    for (const cookie of setCookies) {
+      const [nameValue] = cookie.split(";");
+      const [name] = nameValue.split("=");
+      cookieMap.set(name.trim(), nameValue.trim());
+    }
 
+    // Then override dengan auth cookies (yang baru)
+    for (const cookie of authCookies) {
+      const [nameValue] = cookie.split(";");
+      const [name] = nameValue.split("=");
+      cookieMap.set(name.trim(), nameValue.trim());
+    }
+
+    const allCookies = Array.from(cookieMap.values()).join("; ");
+
+    console.log(`🍪 Final cookie names: ${Array.from(cookieMap.keys()).join(", ")}`);
     console.log(`📥 Response status: ${responseStatus}`);
     console.log(`📥 Redirect location: ${responseLocation}`);
     console.log(`🍪 Combined cookies: ${allCookies.substring(0, 200)}...`);
