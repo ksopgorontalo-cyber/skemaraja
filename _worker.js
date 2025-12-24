@@ -657,9 +657,61 @@ async function handleDashboard(env, corsHeaders) {
     .count-item { text-align: center; padding: 12px 20px; background: #f0f0f0; border-radius: 8px; }
     .count-number { font-size: 24px; font-weight: 700; color: #1e3c72; }
     .count-label { font-size: 12px; color: #666; }
+    /* Result Modal */
+    .result-modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    .result-modal-content {
+      background: white;
+      border-radius: 16px;
+      padding: 30px;
+      max-width: 450px;
+      width: 90%;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      animation: modalSlideIn 0.3s ease;
+    }
+    @keyframes modalSlideIn {
+      from { opacity: 0; transform: translateY(-30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .result-modal-icon {
+      font-size: 60px;
+      margin-bottom: 16px;
+    }
+    .result-modal-title {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+    .result-modal-message {
+      font-size: 15px;
+      color: #555;
+      margin-bottom: 24px;
+      line-height: 1.6;
+    }
+    .result-modal.success .result-modal-title { color: #22c55e; }
+    .result-modal.error .result-modal-title { color: #ef4444; }
+    .result-modal.pending .result-modal-title { color: #f59e0b; }
   </style>
 </head>
 <body>
+  <!-- Result Modal for Manual Check-in -->
+  <div id="resultModal" class="result-modal" onclick="hideResultModal()">
+    <div class="result-modal-content" onclick="event.stopPropagation()">
+      <div class="result-modal-icon" id="resultModalIcon">⏳</div>
+      <div class="result-modal-title" id="resultModalTitle">Proses</div>
+      <div class="result-modal-message" id="resultModalMessage">Sedang memproses...</div>
+      <button class="btn btn-primary" onclick="hideResultModal()">Tutup</button>
+    </div>
+  </div>
+
   <div class="container">
     <div class="header">
       <h1>🕐 SKEMARAJA Auto Check-in</h1>
@@ -824,6 +876,26 @@ async function handleDashboard(env, corsHeaders) {
       resultDiv.innerHTML = message;
     }
 
+    // Modal popup untuk hasil check-in manual
+    function showModal(type, title, message) {
+      const modal = document.getElementById('resultModal');
+      const icon = document.getElementById('resultModalIcon');
+      const titleEl = document.getElementById('resultModalTitle');
+      const msgEl = document.getElementById('resultModalMessage');
+      
+      modal.className = 'result-modal ' + type;
+      icon.textContent = type === 'success' ? '✅' : type === 'pending' ? '⏳' : '❌';
+      titleEl.textContent = title;
+      msgEl.innerHTML = message;
+      
+      modal.style.display = 'flex';
+    }
+    
+    function hideResultModal() {
+      document.getElementById('resultModal').style.display = 'none';
+      location.reload();
+    }
+
     function addUser() {
       const usersList = document.getElementById('usersList');
       const newUser = document.createElement('div');
@@ -920,27 +992,26 @@ async function handleDashboard(env, corsHeaders) {
     });
 
     async function checkinAll() {
-      showResult('pending', '⏳ Sedang melakukan check-in untuk semua user...');
+      showModal('pending', 'Proses Check-in', '⏳ Sedang melakukan check-in untuk semua user...');
       try {
         const res = await fetch('/checkin', { method: 'POST' });
         const data = await res.json();
-        let msg = '<strong>Hasil Check-in:</strong><br>';
+        let msg = '';
         if (data.results) {
           data.results.forEach(r => {
-            msg += \`\${r.success ? '✅' : '❌'} \${r.user}: \${r.message}<br>\`;
+            msg += \`\${r.success ? '✅' : '❌'} <strong>\${r.user}</strong>: \${r.message}<br>\`;
           });
         } else {
           msg = data.message;
         }
-        showResult(data.success ? 'success' : 'error', msg);
-        setTimeout(() => location.reload(), 3000);
+        showModal(data.success ? 'success' : 'error', data.success ? 'Check-in Berhasil' : 'Check-in Gagal', msg);
       } catch (err) {
-        showResult('error', 'Error: ' + err.message);
+        showModal('error', 'Error', 'Error: ' + err.message);
       }
     }
 
     async function checkinUser(index) {
-      showResult('pending', '⏳ Sedang melakukan check-in...');
+      showModal('pending', 'Proses Check-in', '⏳ Sedang melakukan check-in...');
       const formData = new FormData(document.getElementById('configForm'));
       const user = {
         name: formData.get(\`user_\${index}_name\`),
@@ -955,10 +1026,9 @@ async function handleDashboard(env, corsHeaders) {
           body: JSON.stringify({ user })
         });
         const data = await res.json();
-        showResult(data.success ? 'success' : 'error', data.message);
-        setTimeout(() => location.reload(), 2000);
+        showModal(data.success ? 'success' : 'error', data.success ? 'Check-in Berhasil' : 'Check-in Gagal', data.message);
       } catch (err) {
-        showResult('error', 'Error: ' + err.message);
+        showModal('error', 'Error', 'Error: ' + err.message);
       }
     }
 
