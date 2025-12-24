@@ -349,17 +349,22 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
           // Ambil cookies baru dari response authenticate
           const newCookies = authResponse.headers.getAll("set-cookie");
           const allCookies = [...setCookies, ...newCookies].map(c => c.split(";")[0]).join("; ");
+          console.log(`🍪 Total cookies: ${allCookies.length} chars`);
 
           const dashboardResponse = await fetch(SKEMARAJA_BASE, {
             headers: {
               "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
               "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
               "Cookie": allCookies,
-            }
+            },
+            redirect: "follow"  // Follow redirect to get actual dashboard
           });
+
+          console.log(`📄 Dashboard response: status=${dashboardResponse.status}, ok=${dashboardResponse.ok}`);
 
           if (dashboardResponse.ok) {
             const dashboardHtml = await dashboardResponse.text();
+            console.log(`📄 Dashboard HTML length: ${dashboardHtml.length} chars`);
 
             // Parse waktu absensi dari tabel
             // Format: <td class="bg-warning">24-Dec-2025 10:00:08</td>
