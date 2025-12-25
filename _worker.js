@@ -841,7 +841,7 @@ async function handleDashboard(env, corsHeaders) {
 
     <!-- Users Card -->
     <div class="card">
-      <h2>👥 Daftar User</h2>
+      <h2>👥 Daftar Pegawai</h2>
       
       ${config.users.length === 0 || !config.users.some(u => u.nip) ? '<div class="alert alert-warning">⚠️ Belum ada user yang dikonfigurasi. Tambahkan user di bawah.</div>' : ''}
       
