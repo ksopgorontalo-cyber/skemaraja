@@ -228,7 +228,7 @@ export default {
       }
 
       // Cek autentikasi untuk semua route lainnya
-      const authPassword = env.AUTH_PASSWORD || AUTH_PASSWORD;
+      const authPassword = await getAuthPassword(env);
       if (!isAuthenticated(request, authPassword)) {
         return Response.redirect(new URL("/login", url.origin).href, 302);
       }
