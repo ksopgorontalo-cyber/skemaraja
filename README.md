@@ -1,7 +1,6 @@
 # SKEMARAJA Auto Check-in
 
 Cloudflare Worker untuk auto check-in ke sistem SKEMARAJA (https://skemaraja.dephub.go.id).
-Demo : https://skemaraja.rapid-credit-c491.workers.dev/
 
 ## ✨ Fitur
 
@@ -133,9 +132,9 @@ Notifikasi WA akan menampilkan:
 
 ## ⚠️ Disclaimer
 
-Aplikasi ini dibuat untuk keperluan pribadi. Pastikan penggunaan sesuai dengan kebijakan kantor Anda.
+Aplikasi ini dibuat untuk pembelajaran. Pastikan penggunaan sesuai dengan kebijakan kantor Anda.
 
 ## 📝 License
 
 Free Source
-Dev By SMRT KSOP GORONTALO
+Dev By KSOP GORONTALO
