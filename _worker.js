@@ -111,9 +111,30 @@ async function sendWhatsAppNotification(env, user, schedule, success, message, c
   // Format nomor HP (hapus karakter non-digit, countryCode akan handle 0 -> 62)
   let phone = user.phone.replace(/\D/g, '');
 
-  // Buat pesan notifikasi
-  const statusEmoji = success ? '✅' : '❌';
-  const statusText = success ? 'BERHASIL' : 'GAGAL';
+  // Deteksi apakah ini "sudah check-in sebelumnya" (bukan check-in baru)
+  const isAlreadyCheckedIn = message && (
+    message.toLowerCase().includes('sudah check-in') ||
+    message.toLowerCase().includes('sebelumnya') ||
+    message.includes('ℹ️')
+  );
+
+  // Buat pesan notifikasi berdasarkan status
+  let statusEmoji, statusText, footerMessage;
+
+  if (isAlreadyCheckedIn) {
+    statusEmoji = 'ℹ️';
+    statusText = 'INFO';
+    footerMessage = '📝 ' + message;
+  } else if (success) {
+    statusEmoji = '✅';
+    statusText = 'BERHASIL';
+    footerMessage = '🎉 Terima kasih sudah absen tepat waktu!';
+  } else {
+    statusEmoji = '❌';
+    statusText = 'GAGAL';
+    footerMessage = '⚠️ ' + message;
+  }
+
   const waMessage = `${statusEmoji} *Check-in SKEMARAJA ${statusText}*
 
 👤 *Nama:* ${user.name}
@@ -121,7 +142,7 @@ async function sendWhatsAppNotification(env, user, schedule, success, message, c
 🕐 *Waktu:* ${checkinTime || new Date().toLocaleString('id-ID', { timeZone: 'Asia/Makassar' })}
 📍 *Status:* ${schedule.status_wfh === '1' ? 'WFH' : schedule.status_wfh === '2' ? 'WFO' : 'Dinas Luar'}
 
-${success ? '🎉 Terima kasih sudah absen tepat waktu!' : '⚠️ ' + message}
+${footerMessage}
 
 _Auto Check-in by SKEMARAJA Worker_`;
 
