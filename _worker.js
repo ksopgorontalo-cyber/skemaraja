@@ -615,7 +615,8 @@ async function handleDashboard(env, corsHeaders) {
     .btn-success { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; }
     .btn-danger { background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%); color: white; }
     .btn-warning { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; }
-    .btn-sm { padding: 8px 16px; font-size: 12px; }
+    .btn-info { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+    .btn-sm { padding: 6px 12px; font-size: 11px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
     .grid-3 { grid-template-columns: repeat(3, 1fr); }
     .user-card {
@@ -698,6 +699,41 @@ async function handleDashboard(env, corsHeaders) {
     }
     .result-modal.success .result-modal-title { color: #22c55e; }
     .result-modal.error .result-modal-title { color: #ef4444; }
+    /* Edit Modal */
+    .edit-modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 1001;
+      justify-content: center;
+      align-items: center;
+    }
+    .edit-modal-content {
+      background: white;
+      border-radius: 16px;
+      padding: 30px;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      animation: modalSlideIn 0.3s ease;
+    }
+    .edit-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .edit-modal-header h3 {
+      margin: 0;
+      color: #1e3c72;
+    }
+    .edit-modal-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+    }
     .result-modal.pending .result-modal-title { color: #f59e0b; }
   </style>
 </head>
@@ -747,31 +783,24 @@ async function handleDashboard(env, corsHeaders) {
         <div id="usersList">
           ${config.users.map((user, i) => `
             <div class="user-card ${user.enabled && user.nip ? 'enabled' : ''}" data-index="${i}">
-              <div class="user-header">
-                <span class="user-name">${user.name || 'User ' + (i + 1)}</span>
-                <div style="display: flex; align-items: center; gap: 12px;">
+              <input type="hidden" name="user_${i}_name" value="${user.name || ''}">
+              <input type="hidden" name="user_${i}_nip" value="${user.nip || ''}">
+              <input type="hidden" name="user_${i}_password" value="${user.password || ''}">
+              <div class="user-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <span class="user-name">${user.name || 'User ' + (i + 1)}</span>
+                  <div style="font-size: 12px; color: #666; margin-top: 4px;">NIP: ${user.nip ? user.nip.substring(0, 10) + '...' : '-'}</div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                  <button type="button" class="btn btn-success btn-sm" onclick="checkinUser(${i})" title="Check-in">�</button>
+                  <button type="button" class="btn btn-info btn-sm" onclick="editUser(${i})" title="Edit">✏️</button>
+                  <button type="button" class="btn btn-danger btn-sm" onclick="removeUser(${i})" title="Hapus">🗑️</button>
                   <label class="toggle">
                     <input type="checkbox" name="user_${i}_enabled" ${user.enabled ? 'checked' : ''}>
                     <span class="slider"></span>
                   </label>
-                  <button type="button" class="btn btn-danger btn-sm" onclick="removeUser(${i})">🗑️</button>
                 </div>
               </div>
-              <div class="grid">
-                <div class="form-group">
-                  <label>Nama</label>
-                  <input type="text" name="user_${i}_name" value="${user.name || ''}" placeholder="Nama User">
-                </div>
-                <div class="form-group">
-                  <label>NIP</label>
-                  <input type="text" name="user_${i}_nip" value="${user.nip || ''}" placeholder="NIP">
-                </div>
-                <div class="form-group">
-                  <label>Password</label>
-                  <input type="password" name="user_${i}_password" value="${user.password || ''}" placeholder="Password">
-                </div>
-              </div>
-              <button type="button" class="btn btn-success btn-sm" onclick="checkinUser(${i})">🚀 Check-in User Ini</button>
             </div>
           `).join('')}
         </div>
@@ -902,34 +931,29 @@ async function handleDashboard(env, corsHeaders) {
       newUser.className = 'user-card';
       newUser.dataset.index = userCount;
       newUser.innerHTML = \`
-        <div class="user-header">
-          <span class="user-name">User \${userCount + 1}</span>
-          <div style="display: flex; align-items: center; gap: 12px;">
+        <input type="hidden" name="user_\${userCount}_name" value="">
+        <input type="hidden" name="user_\${userCount}_nip" value="">
+        <input type="hidden" name="user_\${userCount}_password" value="">
+        <div class="user-header" style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <span class="user-name">User \${userCount + 1}</span>
+            <div style="font-size: 12px; color: #666; margin-top: 4px;">NIP: -</div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <button type="button" class="btn btn-success btn-sm" onclick="checkinUser(\${userCount})" title="Check-in">🚀</button>
+            <button type="button" class="btn btn-info btn-sm" onclick="editUser(\${userCount})" title="Edit">✏️</button>
+            <button type="button" class="btn btn-danger btn-sm" onclick="removeUser(\${userCount})" title="Hapus">🗑️</button>
             <label class="toggle">
               <input type="checkbox" name="user_\${userCount}_enabled" checked>
               <span class="slider"></span>
             </label>
-            <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.user-card').remove()">🗑️</button>
           </div>
         </div>
-        <div class="grid">
-          <div class="form-group">
-            <label>Nama</label>
-            <input type="text" name="user_\${userCount}_name" placeholder="Nama User">
-          </div>
-          <div class="form-group">
-            <label>NIP</label>
-            <input type="text" name="user_\${userCount}_nip" placeholder="NIP">
-          </div>
-          <div class="form-group">
-            <label>Password</label>
-            <input type="password" name="user_\${userCount}_password" placeholder="Password">
-          </div>
-        </div>
-        <button type="button" class="btn btn-success btn-sm" onclick="checkinUser(\${userCount})">🚀 Check-in User Ini</button>
       \`;
       usersList.appendChild(newUser);
       userCount++;
+      // Open edit modal for new user
+      editUser(userCount - 1);
     }
 
     function removeUser(index) {
@@ -938,17 +962,78 @@ async function handleDashboard(env, corsHeaders) {
       }
     }
 
+    // Edit User Modal Functions
+    let currentEditIndex = -1;
+
+    function editUser(index) {
+      currentEditIndex = index;
+      const card = document.querySelector(\`.user-card[data-index="\${index}"]\`);
+      if (!card) return;
+
+      const nameInput = card.querySelector('input[name$="_name"]');
+      const nipInput = card.querySelector('input[name$="_nip"]');
+      const passwordInput = card.querySelector('input[name$="_password"]');
+
+      document.getElementById('editUserName').value = nameInput ? nameInput.value : '';
+      document.getElementById('editUserNip').value = nipInput ? nipInput.value : '';
+      document.getElementById('editUserPassword').value = passwordInput ? passwordInput.value : '';
+
+      document.getElementById('editModal').style.display = 'flex';
+    }
+
+    function hideEditModal() {
+      document.getElementById('editModal').style.display = 'none';
+      currentEditIndex = -1;
+    }
+
+    function saveEditUser() {
+      if (currentEditIndex < 0) return;
+
+      const card = document.querySelector(\`.user-card[data-index="\${currentEditIndex}"]\`);
+      if (!card) return;
+
+      const name = document.getElementById('editUserName').value;
+      const nip = document.getElementById('editUserNip').value;
+      const password = document.getElementById('editUserPassword').value;
+
+      // Update hidden inputs
+      const nameInput = card.querySelector('input[name$="_name"]');
+      const nipInput = card.querySelector('input[name$="_nip"]');
+      const passwordInput = card.querySelector('input[name$="_password"]');
+
+      if (nameInput) nameInput.value = name;
+      if (nipInput) nipInput.value = nip;
+      if (passwordInput) passwordInput.value = password;
+
+      // Update display
+      const userNameSpan = card.querySelector('.user-name');
+      const nipDisplay = card.querySelector('.user-header > div:first-child > div');
+
+      if (userNameSpan) userNameSpan.textContent = name || 'User ' + (currentEditIndex + 1);
+      if (nipDisplay) nipDisplay.textContent = 'NIP: ' + (nip ? nip.substring(0, 10) + '...' : '-');
+
+      // Update card class
+      if (nip && card.querySelector('input[name$="_enabled"]')?.checked) {
+        card.classList.add('enabled');
+      } else {
+        card.classList.remove('enabled');
+      }
+
+      hideEditModal();
+      showResult('success', '✅ Data user berhasil diupdate. Klik Simpan untuk menyimpan perubahan.');
+    }
+
     function collectFormData() {
       const formData = new FormData(document.getElementById('configForm'));
       const users = [];
-      
+
       // Collect users dynamically - directly query inputs inside each card
       document.querySelectorAll('.user-card').forEach((card) => {
         const nameInput = card.querySelector('input[name$="_name"]');
         const nipInput = card.querySelector('input[name$="_nip"]');
         const passwordInput = card.querySelector('input[name$="_password"]');
         const enabledInput = card.querySelector('input[name$="_enabled"]');
-        
+
         users.push({
           name: nameInput ? nameInput.value : 'User',
           nip: nipInput ? nipInput.value : '',
@@ -956,7 +1041,7 @@ async function handleDashboard(env, corsHeaders) {
           enabled: enabledInput ? enabledInput.checked : false
         });
       });
-      
+
       return {
         users: users,
         location: {
@@ -1018,7 +1103,7 @@ async function handleDashboard(env, corsHeaders) {
         nip: formData.get(\`user_\${index}_nip\`),
         password: formData.get(\`user_\${index}_password\`)
       };
-      
+
       try {
         const res = await fetch('/checkin-user', {
           method: 'POST',
@@ -1055,15 +1140,15 @@ async function handleDashboard(env, corsHeaders) {
 
     // Import Pegawai Functions
     let pegawaiList = [];
-    
+
     async function showImportModal() {
       document.getElementById('importModal').style.display = 'flex';
       document.getElementById('pegawaiList').innerHTML = '<p style="text-align:center;padding:20px;">⏳ Loading pegawai...</p>';
-      
+
       try {
         const res = await fetch('/pegawai');
         const data = await res.json();
-        
+
         if (data.success) {
           pegawaiList = data.pegawai;
           renderPegawaiList(pegawaiList);
@@ -1094,7 +1179,7 @@ async function handleDashboard(env, corsHeaders) {
 
     function filterPegawai() {
       const search = document.getElementById('searchPegawai').value.toLowerCase();
-      const filtered = pegawaiList.filter(p => 
+      const filtered = pegawaiList.filter(p =>
         p.name.toLowerCase().includes(search) || p.nip.includes(search)
       );
       renderPegawaiList(filtered);
@@ -1113,17 +1198,17 @@ async function handleDashboard(env, corsHeaders) {
       document.querySelectorAll('#pegawaiList input[type=checkbox]:checked').forEach(cb => {
         selected.push({ nip: cb.value, name: cb.dataset.name });
       });
-      
+
       if (selected.length === 0) {
         alert('Pilih minimal 1 pegawai!');
         return;
       }
-      
+
       // Password default = NIP
       selected.forEach(p => {
         addUserWithData(p.name, p.nip, p.nip);
       });
-      
+
       hideImportModal();
       showResult('success', '✅ ' + selected.length + ' pegawai berhasil diimport! Password default = NIP. Simpan untuk menyimpan.');
     }
@@ -1131,58 +1216,77 @@ async function handleDashboard(env, corsHeaders) {
     function addUserWithData(name, nip, password) {
       const usersList = document.getElementById('usersList');
       const newUser = document.createElement('div');
-      newUser.className = 'user-card';
+      newUser.className = 'user-card enabled';
       newUser.dataset.index = userCount;
       newUser.innerHTML = \`
-        <div class="user-header">
-          <span class="user-name">\${name}</span>
-          <div style="display: flex; align-items: center; gap: 12px;">
+        <input type="hidden" name="user_\${userCount}_name" value="\${name}">
+        <input type="hidden" name="user_\${userCount}_nip" value="\${nip}">
+        <input type="hidden" name="user_\${userCount}_password" value="\${password}">
+        <div class="user-header" style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <span class="user-name">\${name}</span>
+            <div style="font-size: 12px; color: #666; margin-top: 4px;">NIP: \${nip ? nip.substring(0, 10) + '...' : '-'}</div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <button type="button" class="btn btn-success btn-sm" onclick="checkinUser(\${userCount})" title="Check-in">🚀</button>
+            <button type="button" class="btn btn-info btn-sm" onclick="editUser(\${userCount})" title="Edit">✏️</button>
+            <button type="button" class="btn btn-danger btn-sm" onclick="removeUser(\${userCount})" title="Hapus">🗑️</button>
             <label class="toggle">
               <input type="checkbox" name="user_\${userCount}_enabled" checked>
               <span class="slider"></span>
             </label>
-            <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.user-card').remove()">🗑️</button>
           </div>
         </div>
-        <div class="grid">
-          <div class="form-group">
-            <label>Nama</label>
-            <input type="text" name="user_\${userCount}_name" value="\${name}" placeholder="Nama User">
-          </div>
-          <div class="form-group">
-            <label>NIP</label>
-            <input type="text" name="user_\${userCount}_nip" value="\${nip}" placeholder="NIP">
-          </div>
-          <div class="form-group">
-            <label>Password</label>
-            <input type="password" name="user_\${userCount}_password" value="\${password}" placeholder="Password">
-          </div>
-        </div>
-        <button type="button" class="btn btn-success btn-sm" onclick="checkinUser(\${userCount})">🚀 Check-in User Ini</button>
       \`;
       usersList.appendChild(newUser);
       userCount++;
     }
-  </script>
+          </script>
 
-  <!-- Import Modal -->
-  <div id="importModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
-    <div style="background:white; border-radius:16px; padding:24px; max-width:600px; width:90%; max-height:80vh; overflow:hidden; display:flex; flex-direction:column;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-        <h2 style="margin:0; color:#1e3c72;">📥 Import Pegawai KSOP</h2>
-        <button onclick="hideImportModal()" style="background:none; border:none; font-size:24px; cursor:pointer;">✕</button>
+          <!-- Import Modal -->
+          <div id="importModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+            <div style="background:white; border-radius:16px; padding:24px; max-width:600px; width:90%; max-height:80vh; overflow:hidden; display:flex; flex-direction:column;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <h2 style="margin:0; color:#1e3c72;">📥 Import Pegawai KSOP</h2>
+                <button onclick="hideImportModal()" style="background:none; border:none; font-size:24px; cursor:pointer;">✕</button>
+              </div>
+              <input type="text" id="searchPegawai" placeholder="🔍 Cari nama atau NIP..." oninput="filterPegawai()" style="width:100%; padding:12px; border:2px solid #e0e0e0; border-radius:8px; margin-bottom:12px;">
+                <div style="margin-bottom:12px; display:flex; gap:10px;">
+                  <button type="button" onclick="selectAllPegawai()" style="padding:8px 16px; background:#1e3c72; color:white; border:none; border-radius:6px; cursor:pointer;">Pilih Semua</button>
+                  <button type="button" onclick="deselectAllPegawai()" style="padding:8px 16px; background:#ccc; color:#333; border:none; border-radius:6px; cursor:pointer;">Batal Pilih</button>
+                </div>
+                <div id="pegawaiList" style="flex:1; overflow-y:auto; border:1px solid #e0e0e0; border-radius:8px; max-height:300px;"></div>
+                <button type="button" onclick="importSelected()" style="margin-top:16px; width:100%; padding:14px; background:linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color:white; border:none; border-radius:8px; font-size:16px; font-weight:600; cursor:pointer;">✅ Import Pegawai Terpilih</button>
+            </div>
+          </div>
+
+  <!-- Edit Modal -->
+  <div id="editModal" class="edit-modal" onclick="hideEditModal()">
+    <div class="edit-modal-content" onclick="event.stopPropagation()">
+      <div class="edit-modal-header">
+        <h3>✏️ Edit User</h3>
+        <button class="edit-modal-close" onclick="hideEditModal()">✕</button>
       </div>
-      <input type="text" id="searchPegawai" placeholder="🔍 Cari nama atau NIP..." oninput="filterPegawai()" style="width:100%; padding:12px; border:2px solid #e0e0e0; border-radius:8px; margin-bottom:12px;">
-      <div style="margin-bottom:12px; display:flex; gap:10px;">
-        <button type="button" onclick="selectAllPegawai()" style="padding:8px 16px; background:#1e3c72; color:white; border:none; border-radius:6px; cursor:pointer;">Pilih Semua</button>
-        <button type="button" onclick="deselectAllPegawai()" style="padding:8px 16px; background:#ccc; color:#333; border:none; border-radius:6px; cursor:pointer;">Batal Pilih</button>
+      <div class="form-group">
+        <label>Nama</label>
+        <input type="text" id="editUserName" placeholder="Nama User">
       </div>
-      <div id="pegawaiList" style="flex:1; overflow-y:auto; border:1px solid #e0e0e0; border-radius:8px; max-height:300px;"></div>
-      <button type="button" onclick="importSelected()" style="margin-top:16px; width:100%; padding:14px; background:linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color:white; border:none; border-radius:8px; font-size:16px; font-weight:600; cursor:pointer;">✅ Import Pegawai Terpilih</button>
+      <div class="form-group">
+        <label>NIP</label>
+        <input type="text" id="editUserNip" placeholder="NIP">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="editUserPassword" placeholder="Password">
+      </div>
+      <div style="display: flex; gap: 10px; margin-top: 20px;">
+        <button type="button" class="btn btn-primary" onclick="saveEditUser()" style="flex: 1;">💾 Simpan</button>
+        <button type="button" class="btn btn-danger" onclick="hideEditModal()">Batal</button>
+      </div>
     </div>
   </div>
 </body>
-</html>`;
+      </html>`;
 
   return new Response(html, {
     headers: { ...corsHeaders, "Content-Type": "text/html; charset=utf-8" }
@@ -1213,7 +1317,7 @@ async function handleSaveConfig(request, env, corsHeaders) {
       await addLog(env, {
         timestamp: new Date().toISOString(),
         type: "success",
-        message: `Konfigurasi disimpan (${config.users.length} users)`
+        message: `Konfigurasi disimpan(${config.users.length} users)`
       });
       return new Response(JSON.stringify({ success: true, message: "✅ Konfigurasi berhasil disimpan!" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
@@ -1276,7 +1380,7 @@ async function handleManualCheckin(request, env, corsHeaders) {
 
   return new Response(JSON.stringify({
     success: allSuccess,
-    message: allSuccess ? `✅ Semua check-in ${activeSchedule.name} berhasil!` : `⚠️ Beberapa check-in ${activeSchedule.name} gagal`,
+    message: allSuccess ? `✅ Semua check -in ${activeSchedule.name} berhasil!` : `⚠️ Beberapa check -in ${activeSchedule.name} gagal`,
     results: results,
     schedule: activeSchedule.name,
     witaHour: currentHour
@@ -1325,39 +1429,39 @@ async function handleCheckinSingleUser(request, env, corsHeaders) {
 async function handleGetLogs(env, corsHeaders) {
   const logs = await getLogs(env);
 
-  const html = `<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Logs - SKEMARAJA Auto Check-in</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-      min-height: 100vh;
-      padding: 20px;
+  const html = `< !DOCTYPE html >
+    <html lang="id">
+      <head>
+        <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Logs - SKEMARAJA Auto Check-in</title>
+            <style>
+              * {margin: 0; padding: 0; box-sizing: border-box; }
+              body {
+                font - family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+              background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+              min-height: 100vh;
+              padding: 20px;
     }
-    .container { max-width: 900px; margin: 0 auto; }
-    .card { background: white; border-radius: 16px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
-    h1 { color: white; text-align: center; margin-bottom: 20px; }
-    .log-item { padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid; }
-    .log-success { background: #f0fdf4; border-color: #22c55e; }
-    .log-error { background: #fef2f2; border-color: #ef4444; }
-    .log-time { font-size: 12px; color: #666; }
-    .log-message { margin-top: 4px; }
-    .log-user { font-weight: 600; color: #1e3c72; }
-    .back-link { display: inline-block; margin-bottom: 20px; color: white; text-decoration: none; }
-    .back-link:hover { text-decoration: underline; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <a href="/" class="back-link">← Kembali ke Dashboard</a>
-    <h1>📜 Log Check-in</h1>
-    <div class="card">
-      ${logs.length === 0 ? '<p style="color: #666; text-align: center">Belum ada log</p>' :
+              .container {max - width: 900px; margin: 0 auto; }
+              .card {background: white; border-radius: 16px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+              h1 {color: white; text-align: center; margin-bottom: 20px; }
+              .log-item {padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid; }
+              .log-success {background: #f0fdf4; border-color: #22c55e; }
+              .log-error {background: #fef2f2; border-color: #ef4444; }
+              .log-time {font - size: 12px; color: #666; }
+              .log-message {margin - top: 4px; }
+              .log-user {font - weight: 600; color: #1e3c72; }
+              .back-link {display: inline-block; margin-bottom: 20px; color: white; text-decoration: none; }
+              .back-link:hover {text - decoration: underline; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <a href="/" class="back-link">← Kembali ke Dashboard</a>
+              <h1>📜 Log Check-in</h1>
+              <div class="card">
+                ${logs.length === 0 ? '<p style="color: #666; text-align: center">Belum ada log</p>' :
       logs.map(log => `
           <div class="log-item log-${log.type}">
             <div class="log-time">${new Date(log.timestamp).toLocaleString('id-ID')}</div>
@@ -1369,10 +1473,10 @@ async function handleGetLogs(env, corsHeaders) {
           </div>
         `).join('')
     }
-    </div>
-  </div>
-</body>
-</html>`;
+              </div>
+            </div>
+          </body>
+        </html>`;
 
   return new Response(html, {
     headers: { ...corsHeaders, "Content-Type": "text/html; charset=utf-8" }
@@ -1478,89 +1582,89 @@ function isAuthenticated(request, password) {
 
 function handleLoginPage(corsHeaders, error = "") {
   const html = `<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Login - SKEMARAJA Auto Check-in</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
+        <html lang="id">
+          <head>
+            <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Login - SKEMARAJA Auto Check-in</title>
+                <style>
+                  * {margin: 0; padding: 0; box-sizing: border-box; }
+                  body {
+                    font - family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                  background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+                  min-height: 100vh;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  padding: 20px;
     }
-    .login-card {
-      background: white;
-      border-radius: 16px;
-      padding: 40px;
-      width: 100%;
-      max-width: 400px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                  .login-card {
+                    background: white;
+                  border-radius: 16px;
+                  padding: 40px;
+                  width: 100%;
+                  max-width: 400px;
+                  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
     }
-    h1 {
-      color: #1e3c72;
-      text-align: center;
-      margin-bottom: 30px;
-      font-size: 1.8rem;
+                  h1 {
+                    color: #1e3c72;
+                  text-align: center;
+                  margin-bottom: 30px;
+                  font-size: 1.8rem;
     }
-    .form-group { margin-bottom: 20px; }
-    label { display: block; margin-bottom: 8px; font-weight: 600; color: #555; }
-    input {
-      width: 100%;
-      padding: 14px;
-      border: 2px solid #e0e0e0;
-      border-radius: 8px;
-      font-size: 16px;
-      transition: border-color 0.3s;
+                  .form-group {margin - bottom: 20px; }
+                  label {display: block; margin-bottom: 8px; font-weight: 600; color: #555; }
+                  input {
+                    width: 100%;
+                  padding: 14px;
+                  border: 2px solid #e0e0e0;
+                  border-radius: 8px;
+                  font-size: 16px;
+                  transition: border-color 0.3s;
     }
-    input:focus { outline: none; border-color: #1e3c72; }
-    .btn {
-      width: 100%;
-      padding: 14px;
-      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.3s;
+                  input:focus {outline: none; border-color: #1e3c72; }
+                  .btn {
+                    width: 100%;
+                  padding: 14px;
+                  background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+                  color: white;
+                  border: none;
+                  border-radius: 8px;
+                  font-size: 16px;
+                  font-weight: 600;
+                  cursor: pointer;
+                  transition: all 0.3s;
     }
-    .btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 20px rgba(30, 60, 114, 0.4);
+                  .btn:hover {
+                    transform: translateY(-2px);
+                  box-shadow: 0 8px 20px rgba(30, 60, 114, 0.4);
     }
-    .error {
-      background: #f8d7da;
-      color: #721c24;
-      padding: 12px;
-      border-radius: 8px;
-      margin-bottom: 20px;
-      text-align: center;
+                  .error {
+                    background: #f8d7da;
+                  color: #721c24;
+                  padding: 12px;
+                  border-radius: 8px;
+                  margin-bottom: 20px;
+                  text-align: center;
     }
-    .logo { text-align: center; margin-bottom: 20px; font-size: 48px; }
-  </style>
-</head>
-<body>
-  <div class="login-card">
-    <div class="logo">🔐</div>
-    <h1>SKEMARAJA Auto Check-in</h1>
-    ${error ? `<div class="error">${error}</div>` : ''}
-    <form method="POST" action="/login">
-      <div class="form-group">
-        <label for="password">Password</label>
-        <input type="password" id="password" name="password" placeholder="Masukkan password" required autofocus>
-      </div>
-      <button type="submit" class="btn">🔓 Login</button>
-    </form>
-  </div>
-</body>
-</html>`;
+                  .logo {text - align: center; margin-bottom: 20px; font-size: 48px; }
+                </style>
+              </head>
+              <body>
+                <div class="login-card">
+                  <div class="logo">🔐</div>
+                  <h1>SKEMARAJA Auto Check-in</h1>
+                  ${error ? `<div class="error">${error}</div>` : ''}
+                  <form method="POST" action="/login">
+                    <div class="form-group">
+                      <label for="password">Password</label>
+                      <input type="password" id="password" name="password" placeholder="Masukkan password" required autofocus>
+                    </div>
+                    <button type="submit" class="btn">🔓 Login</button>
+                  </form>
+                </div>
+              </body>
+            </html>`;
 
   return new Response(html, {
     headers: { ...corsHeaders, "Content-Type": "text/html; charset=utf-8" }
