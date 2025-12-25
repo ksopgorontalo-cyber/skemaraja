@@ -992,7 +992,6 @@ async function handleDashboard(env, corsHeaders) {
         </div>
         
         <div style="margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap;">
-          <button type="button" class="btn btn-primary" onclick="addUser()">➕ Tambah User</button>
           <button type="button" class="btn btn-success" onclick="showImportModal()">📥 Import Pegawai KSOP</button>
         </div>
 
@@ -1160,38 +1159,6 @@ async function handleDashboard(env, corsHeaders) {
     function hideResultModal() {
       document.getElementById('resultModal').style.display = 'none';
       location.reload();
-    }
-
-    function addUser() {
-      const usersList = document.getElementById('usersList');
-      const newUser = document.createElement('div');
-      newUser.className = 'user-card';
-      newUser.dataset.index = userCount;
-      newUser.innerHTML = \`
-        <input type="hidden" name="user_\${userCount}_name" value="">
-        <input type="hidden" name="user_\${userCount}_nip" value="">
-        <input type="hidden" name="user_\${userCount}_password" value="">
-        <input type="hidden" name="user_\${userCount}_phone" value="">
-        <div class="user-header" style="display: flex; justify-content: space-between; align-items: center;">
-          <div>
-            <span class="user-name">User \${userCount + 1}</span>
-            <div style="font-size: 12px; color: #666; margin-top: 4px;">NIP: - | 📱 -</div>
-          </div>
-          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-            <button type="button" class="btn btn-success btn-sm" onclick="checkinUser(\${userCount})" title="Check-in">✓</button>
-            <button type="button" class="btn btn-info btn-sm" onclick="editUser(\${userCount})" title="Edit">✏️</button>
-            <button type="button" class="btn btn-danger btn-sm" onclick="removeUser(\${userCount})" title="Hapus">🗑️</button>
-            <label class="toggle">
-              <input type="checkbox" name="user_\${userCount}_enabled" checked>
-              <span class="slider"></span>
-            </label>
-          </div>
-        </div>
-      \`;
-      usersList.appendChild(newUser);
-      userCount++;
-      // Open edit modal for new user
-      editUser(userCount - 1);
     }
 
     function removeUser(index) {
