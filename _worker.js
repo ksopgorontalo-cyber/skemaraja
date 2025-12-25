@@ -263,6 +263,9 @@ export default {
       if (path === "/fonnte/save-config" && request.method === "POST") {
         return handleFonnteSaveConfig(request, env, corsHeaders);
       }
+      if (path === "/fonnte/disconnect" && request.method === "POST") {
+        return handleFonnteDisconnect(env, corsHeaders);
+      }
 
       return new Response("Not Found", { status: 404, headers: corsHeaders });
     } catch (error) {
@@ -1592,24 +1595,19 @@ async function handleDashboard(env, corsHeaders) {
         showResult('pending', '⏳ Disconnecting device...');
         
         try {
-          const index = document.getElementById('fonnteDeviceSelect').value;
-          let deviceToken = '';
-          if (index !== '' && fonnteDevices[index]) {
-            deviceToken = fonnteDevices[index].token;
-          }
-          
-          const res = await fetch('https://api.fonnte.com/disconnect', {
+          // Use server-side disconnect which will get token from KV
+          const res = await fetch('/fonnte/disconnect', {
             method: 'POST',
-            headers: { 'Authorization': deviceToken }
+            headers: { 'Content-Type': 'application/json' }
           });
           const data = await res.json();
           
-          if (data.status === true) {
+          if (data.success) {
             showResult('success', '✅ Device disconnected successfully');
             updateConnectButton(false);
             checkFonnteStatus();
           } else {
-            showResult('error', '❌ ' + (data.reason || 'Failed to disconnect'));
+            showResult('error', '❌ ' + (data.message || 'Failed to disconnect'));
           }
         } catch (err) {
           showResult('error', '❌ Error: ' + err.message);
@@ -2168,6 +2166,57 @@ async function handleFonnteSaveConfig(request, env, corsHeaders) {
     });
   } catch (error) {
     console.error("Error saving Fonnte config:", error);
+    return new Response(JSON.stringify({
+      success: false,
+      message: error.message
+    }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  }
+}
+
+// Disconnect Fonnte device
+async function handleFonnteDisconnect(env, corsHeaders) {
+  try {
+    const fonnteConfig = await getFonnteConfig(env);
+    const deviceToken = fonnteConfig.deviceToken || env.FONNTE_TOKEN;
+
+    if (!deviceToken) {
+      return new Response(JSON.stringify({
+        success: false,
+        message: "Device Token tidak ditemukan. Silakan simpan konfigurasi terlebih dahulu."
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    const response = await fetch("https://api.fonnte.com/disconnect", {
+      method: "POST",
+      headers: {
+        "Authorization": deviceToken
+      }
+    });
+
+    const data = await response.json();
+    console.log("Fonnte disconnect response:", JSON.stringify(data));
+
+    if (data.status === true) {
+      return new Response(JSON.stringify({
+        success: true,
+        message: "Device berhasil di-disconnect"
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    } else {
+      return new Response(JSON.stringify({
+        success: false,
+        message: data.reason || data.detail || "Gagal disconnect device"
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+  } catch (error) {
+    console.error("Error disconnecting Fonnte:", error);
     return new Response(JSON.stringify({
       success: false,
       message: error.message
