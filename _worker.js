@@ -88,8 +88,22 @@ function getRandomDelayForSchedule(schedule, currentMinutes) {
 
 // Send WhatsApp notification via Fonnte
 async function sendWhatsAppNotification(env, user, schedule, success, message, checkinTime) {
+  // Get device token from KV config first, fallback to env
+  let deviceToken = env.FONNTE_TOKEN;
+  try {
+    const stored = await env.CHECKIN_KV.get("fonnte_config");
+    if (stored) {
+      const fonnteConfig = JSON.parse(stored);
+      if (fonnteConfig.deviceToken) {
+        deviceToken = fonnteConfig.deviceToken;
+      }
+    }
+  } catch (e) {
+    console.log("Error reading fonnte config from KV:", e.message);
+  }
+
   // Skip jika tidak ada nomor HP atau token Fonnte
-  if (!user.phone || !env.FONNTE_TOKEN) {
+  if (!user.phone || !deviceToken) {
     console.log(`📱 Skip WA notification: ${!user.phone ? 'No phone' : 'No Fonnte token'}`);
     return;
   }
@@ -121,7 +135,7 @@ _Auto Check-in by SKEMARAJA Worker_`;
     const response = await fetch(FONNTE_API, {
       method: 'POST',
       headers: {
-        'Authorization': env.FONNTE_TOKEN  // Token langsung, tanpa Bearer
+        'Authorization': deviceToken  // Device token dari KV atau env
       },
       body: formData
     });
@@ -207,6 +221,20 @@ export default {
       }
       if (path === "/pegawai") {
         return handleGetPegawai(request, corsHeaders);
+      }
+
+      // Fonnte WhatsApp API routes
+      if (path === "/fonnte/devices" && request.method === "GET") {
+        return handleFonnteGetDevices(env, corsHeaders);
+      }
+      if (path === "/fonnte/qr" && request.method === "POST") {
+        return handleFonnteGetQR(request, env, corsHeaders);
+      }
+      if (path === "/fonnte/status" && request.method === "GET") {
+        return handleFonnteStatus(env, corsHeaders);
+      }
+      if (path === "/fonnte/save-config" && request.method === "POST") {
+        return handleFonnteSaveConfig(request, env, corsHeaders);
       }
 
       return new Response("Not Found", { status: 404, headers: corsHeaders });
@@ -995,6 +1023,49 @@ async function handleDashboard(env, corsHeaders) {
             </div>
           `).join('')}
         </div>
+    
+    <!-- WhatsApp Settings Card -->
+    <div class="card">
+      <h2>📱 Pengaturan WhatsApp (Fonnte)</h2>
+      <div id="waStatus" style="margin-bottom: 16px; padding: 12px; border-radius: 8px; background: #f1f5f9;">
+        <span id="waStatusIcon">⏳</span> <span id="waStatusText">Mengecek status...</span>
+      </div>
+      
+      <div class="form-grid" style="margin-bottom: 16px;">
+        <div class="form-group" style="grid-column: 1 / -1;">
+          <label>Account Token (dari fonnte.com)</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="password" id="fonnteAccountToken" placeholder="Masukkan Account Token" style="flex: 1;">
+            <button type="button" class="btn btn-primary btn-sm" onclick="loadFonnteDevices()">🔄 Load Devices</button>
+          </div>
+          <small style="color: #666;">Token ini untuk mengambil daftar device. Dapatkan di fonnte.com</small>
+        </div>
+      </div>
+      
+      <div id="fonnteDeviceList" style="margin-bottom: 16px; display: none;">
+        <div class="form-group">
+          <label>Pilih Device</label>
+          <select id="fonnteDeviceSelect" onchange="onDeviceSelected()">
+            <option value="">-- Pilih Device --</option>
+          </select>
+        </div>
+        <div id="deviceInfo" style="padding: 12px; background: #f8fafc; border-radius: 8px; display: none;">
+          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 14px;">
+            <div><strong>Nama:</strong> <span id="deviceInfoName">-</span></div>
+            <div><strong>Nomor:</strong> <span id="deviceInfoNumber">-</span></div>
+            <div><strong>Status:</strong> <span id="deviceInfoStatus">-</span></div>
+            <div><strong>Quota:</strong> <span id="deviceInfoQuota">-</span></div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="btn-group" style="flex-wrap: wrap;">
+        <button type="button" class="btn btn-success" onclick="saveFonnteConfig()">💾 Simpan Token</button>
+        <button type="button" class="btn btn-primary" onclick="connectFonnteDevice()">📲 Connect Device</button>
+        <button type="button" class="btn btn-info" onclick="checkFonnteStatus()">🔍 Cek Status</button>
+        <button type="button" class="btn btn-warning" onclick="sendTestWA()">📤 Test Kirim WA</button>
+      </div>
+    </div>
 
         <div class="btn-group">
           <button type="submit" class="btn btn-primary">💾 Simpan Konfigurasi</button>
@@ -1278,6 +1349,215 @@ async function handleDashboard(env, corsHeaders) {
         location.reload();
       } catch (err) {
         alert('Error: ' + err.message);
+      }
+    }
+
+    // ============================================================
+    // Fonnte WhatsApp Functions
+    // ============================================================
+    let fonnteDevices = [];
+
+    // Load on page ready
+    document.addEventListener('DOMContentLoaded', function() {
+      checkFonnteStatus();
+    });
+
+    async function loadFonnteDevices() {
+      const accountToken = document.getElementById('fonnteAccountToken').value;
+      
+      if (accountToken) {
+        // Save account token first
+        await fetch('/fonnte/save-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accountToken })
+        });
+      }
+      
+      showResult('pending', '⏳ Mengambil daftar device...');
+      
+      try {
+        const res = await fetch('/fonnte/devices');
+        const data = await res.json();
+        
+        if (data.success) {
+          fonnteDevices = data.devices;
+          const select = document.getElementById('fonnteDeviceSelect');
+          select.innerHTML = '<option value="">-- Pilih Device --</option>';
+          
+          data.devices.forEach((d, i) => {
+            const statusIcon = d.status === 'connect' ? '🟢' : '🔴';
+            select.innerHTML += \`<option value="\${i}">\${statusIcon} \${d.name} (\${d.device})</option>\`;
+          });
+          
+          document.getElementById('fonnteDeviceList').style.display = 'block';
+          showResult('success', '✅ Ditemukan ' + data.devices.length + ' device');
+        } else {
+          showResult('error', '❌ ' + data.message);
+        }
+      } catch (err) {
+        showResult('error', '❌ Error: ' + err.message);
+      }
+    }
+
+    function onDeviceSelected() {
+      const index = document.getElementById('fonnteDeviceSelect').value;
+      if (index === '' || !fonnteDevices[index]) {
+        document.getElementById('deviceInfo').style.display = 'none';
+        return;
+      }
+      
+      const device = fonnteDevices[index];
+      document.getElementById('deviceInfoName').textContent = device.name;
+      document.getElementById('deviceInfoNumber').textContent = device.device;
+      document.getElementById('deviceInfoStatus').textContent = device.status === 'connect' ? '🟢 Connected' : '🔴 Disconnected';
+      document.getElementById('deviceInfoQuota').textContent = device.quota || 'N/A';
+      document.getElementById('deviceInfo').style.display = 'block';
+    }
+
+    async function saveFonnteConfig() {
+      const index = document.getElementById('fonnteDeviceSelect').value;
+      const accountToken = document.getElementById('fonnteAccountToken').value;
+      
+      if (!accountToken) {
+        showResult('error', '❌ Masukkan Account Token terlebih dahulu');
+        return;
+      }
+      
+      let deviceToken = '';
+      let deviceNumber = '';
+      let deviceName = '';
+      
+      if (index !== '' && fonnteDevices[index]) {
+        const device = fonnteDevices[index];
+        deviceToken = device.token;
+        deviceNumber = device.device;
+        deviceName = device.name;
+      }
+      
+      showResult('pending', '⏳ Menyimpan konfigurasi...');
+      
+      try {
+        const res = await fetch('/fonnte/save-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accountToken, deviceToken, deviceNumber, deviceName })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+          showResult('success', '✅ ' + data.message);
+        } else {
+          showResult('error', '❌ ' + data.message);
+        }
+      } catch (err) {
+        showResult('error', '❌ Error: ' + err.message);
+      }
+    }
+
+    async function connectFonnteDevice() {
+      const index = document.getElementById('fonnteDeviceSelect').value;
+      let deviceToken = '';
+      
+      if (index !== '' && fonnteDevices[index]) {
+        deviceToken = fonnteDevices[index].token;
+      }
+      
+      showResult('pending', '⏳ Mengambil QR Code...');
+      
+      try {
+        const res = await fetch('/fonnte/qr', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deviceToken })
+        });
+        const data = await res.json();
+        
+        if (data.success && data.qr) {
+          // Show QR modal
+          const qrHtml = \`
+            <div id="qrModal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); display:flex; align-items:center; justify-content:center; z-index:9999;" onclick="this.remove()">
+              <div style="background:white; padding:24px; border-radius:16px; text-align:center; max-width:400px;" onclick="event.stopPropagation()">
+                <h3 style="margin-bottom:16px;">📱 Scan QR Code</h3>
+                <img src="\${data.qr}" style="max-width:300px; border-radius:8px;">
+                <p style="margin-top:16px; color:#666;">Buka WhatsApp > Linked Devices > Scan QR</p>
+                <button class="btn btn-primary" onclick="document.getElementById('qrModal').remove(); checkFonnteStatus();" style="margin-top:16px;">✅ Selesai</button>
+              </div>
+            </div>
+          \`;
+          document.body.insertAdjacentHTML('beforeend', qrHtml);
+          showResult('success', '📲 Silakan scan QR Code');
+        } else {
+          showResult('error', '❌ ' + (data.message || 'Gagal mendapatkan QR'));
+        }
+      } catch (err) {
+        showResult('error', '❌ Error: ' + err.message);
+      }
+    }
+
+    async function checkFonnteStatus() {
+      const statusEl = document.getElementById('waStatus');
+      const iconEl = document.getElementById('waStatusIcon');
+      const textEl = document.getElementById('waStatusText');
+      
+      statusEl.style.background = '#f1f5f9';
+      iconEl.textContent = '⏳';
+      textEl.textContent = 'Mengecek status...';
+      
+      try {
+        const res = await fetch('/fonnte/status');
+        const data = await res.json();
+        
+        if (data.success) {
+          if (data.status === 'connected') {
+            statusEl.style.background = '#dcfce7';
+            iconEl.textContent = '🟢';
+            textEl.innerHTML = \`<strong>Connected</strong> - \${data.device?.name || ''} (\${data.device?.number || ''})\`;
+          } else if (data.status === 'disconnected') {
+            statusEl.style.background = '#fee2e2';
+            iconEl.textContent = '🔴';
+            textEl.textContent = 'Disconnected - ' + (data.message || 'Device tidak terhubung');
+          } else {
+            statusEl.style.background = '#fef3c7';
+            iconEl.textContent = '⚠️';
+            textEl.textContent = data.message || 'Status tidak diketahui';
+          }
+        } else {
+          statusEl.style.background = '#fee2e2';
+          iconEl.textContent = '❌';
+          textEl.textContent = 'Error: ' + data.message;
+        }
+      } catch (err) {
+        statusEl.style.background = '#fee2e2';
+        iconEl.textContent = '❌';
+        textEl.textContent = 'Error: ' + err.message;
+      }
+    }
+
+    async function sendTestWA() {
+      const phone = prompt('Masukkan nomor WhatsApp tujuan (contoh: 08123456789):');
+      if (!phone) return;
+      
+      showResult('pending', '⏳ Mengirim pesan test...');
+      
+      // Use first active user from the form if any
+      const userCards = document.querySelectorAll('.user-card');
+      let testUser = { name: 'Test User', nip: '12345' };
+      
+      if (userCards.length > 0) {
+        const nameInput = userCards[0].querySelector('input[name*="_name"]');
+        const nipInput = userCards[0].querySelector('input[name*="_nip"]');
+        if (nameInput && nipInput) {
+          testUser.name = nameInput.value;
+          testUser.nip = nipInput.value;
+        }
+      }
+      
+      try {
+        // For now, just trigger a check-in which will send notification
+        showResult('success', '✅ Gunakan tombol 🚀 Check-in untuk test pengiriman WA');
+      } catch (err) {
+        showResult('error', '❌ Error: ' + err.message);
       }
     }
 
@@ -1581,6 +1861,234 @@ async function handleCheckinSingleUser(request, env, corsHeaders) {
   }), {
     headers: { ...corsHeaders, "Content-Type": "application/json" }
   });
+}
+
+// ============================================================================
+// Fonnte WhatsApp API Handlers
+// ============================================================================
+
+// Get Fonnte config from KV
+async function getFonnteConfig(env) {
+  try {
+    const stored = await env.CHECKIN_KV.get("fonnte_config");
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.error("Error getting Fonnte config:", e);
+  }
+  return {
+    accountToken: env.FONNTE_ACCOUNT_TOKEN || "",
+    deviceToken: env.FONNTE_TOKEN || "",
+    deviceNumber: "",
+    deviceName: ""
+  };
+}
+
+// Save Fonnte config to KV
+async function saveFonnteConfig(env, config) {
+  await env.CHECKIN_KV.put("fonnte_config", JSON.stringify(config));
+}
+
+// Get devices list from Fonnte API
+async function handleFonnteGetDevices(env, corsHeaders) {
+  try {
+    const fonnteConfig = await getFonnteConfig(env);
+    const accountToken = fonnteConfig.accountToken || env.FONNTE_ACCOUNT_TOKEN;
+
+    if (!accountToken) {
+      return new Response(JSON.stringify({
+        success: false,
+        message: "Account Token belum diset. Silakan masukkan Account Token di pengaturan."
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    const response = await fetch("https://api.fonnte.com/get-devices", {
+      method: "POST",
+      headers: {
+        "Authorization": accountToken
+      }
+    });
+
+    const data = await response.json();
+    console.log("Fonnte get-devices response:", JSON.stringify(data));
+
+    if (data.status === true && data.data) {
+      return new Response(JSON.stringify({
+        success: true,
+        devices: data.data,
+        currentToken: fonnteConfig.deviceToken ? fonnteConfig.deviceToken.substring(0, 8) + "..." : ""
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    } else {
+      return new Response(JSON.stringify({
+        success: false,
+        message: data.reason || "Gagal mengambil daftar device"
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+  } catch (error) {
+    console.error("Error getting Fonnte devices:", error);
+    return new Response(JSON.stringify({
+      success: false,
+      message: error.message
+    }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  }
+}
+
+// Get QR code for device connection
+async function handleFonnteGetQR(request, env, corsHeaders) {
+  try {
+    const { deviceToken } = await request.json();
+    const fonnteConfig = await getFonnteConfig(env);
+    const token = deviceToken || fonnteConfig.deviceToken || env.FONNTE_TOKEN;
+
+    if (!token) {
+      return new Response(JSON.stringify({
+        success: false,
+        message: "Device Token tidak ditemukan"
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    const response = await fetch("https://api.fonnte.com/qr", {
+      method: "POST",
+      headers: {
+        "Authorization": token
+      },
+      body: new URLSearchParams({ type: "qr" })
+    });
+
+    const data = await response.json();
+    console.log("Fonnte QR response:", JSON.stringify(data));
+
+    if (data.status === true && data.url) {
+      return new Response(JSON.stringify({
+        success: true,
+        qr: data.url
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    } else {
+      return new Response(JSON.stringify({
+        success: false,
+        message: data.reason || data.detail || "Gagal mendapatkan QR code"
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+  } catch (error) {
+    console.error("Error getting Fonnte QR:", error);
+    return new Response(JSON.stringify({
+      success: false,
+      message: error.message
+    }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  }
+}
+
+// Check device connection status
+async function handleFonnteStatus(env, corsHeaders) {
+  try {
+    const fonnteConfig = await getFonnteConfig(env);
+    const accountToken = fonnteConfig.accountToken || env.FONNTE_ACCOUNT_TOKEN;
+
+    if (!accountToken) {
+      return new Response(JSON.stringify({
+        success: true,
+        status: "unknown",
+        message: "Account Token belum diset"
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    const response = await fetch("https://api.fonnte.com/get-devices", {
+      method: "POST",
+      headers: {
+        "Authorization": accountToken
+      }
+    });
+
+    const data = await response.json();
+
+    if (data.status === true && data.data && data.data.length > 0) {
+      const device = data.data[0];
+      const isConnected = device.status === "connect";
+
+      return new Response(JSON.stringify({
+        success: true,
+        status: isConnected ? "connected" : "disconnected",
+        device: {
+          name: device.name,
+          number: device.device,
+          token: device.token ? device.token.substring(0, 8) + "..." : "",
+          package: device.package,
+          quota: device.quota,
+          expired: device.expired
+        }
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    } else {
+      return new Response(JSON.stringify({
+        success: true,
+        status: "disconnected",
+        message: "Tidak ada device yang terhubung"
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+  } catch (error) {
+    console.error("Error checking Fonnte status:", error);
+    return new Response(JSON.stringify({
+      success: false,
+      status: "error",
+      message: error.message
+    }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  }
+}
+
+// Save Fonnte configuration (account token, device token)
+async function handleFonnteSaveConfig(request, env, corsHeaders) {
+  try {
+    const { accountToken, deviceToken, deviceNumber, deviceName } = await request.json();
+
+    const fonnteConfig = await getFonnteConfig(env);
+
+    // Update only provided fields
+    if (accountToken !== undefined) fonnteConfig.accountToken = accountToken;
+    if (deviceToken !== undefined) fonnteConfig.deviceToken = deviceToken;
+    if (deviceNumber !== undefined) fonnteConfig.deviceNumber = deviceNumber;
+    if (deviceName !== undefined) fonnteConfig.deviceName = deviceName;
+
+    await saveFonnteConfig(env, fonnteConfig);
+
+    return new Response(JSON.stringify({
+      success: true,
+      message: "Konfigurasi Fonnte berhasil disimpan"
+    }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  } catch (error) {
+    console.error("Error saving Fonnte config:", error);
+    return new Response(JSON.stringify({
+      success: false,
+      message: error.message
+    }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  }
 }
 
 async function handleGetLogs(env, corsHeaders) {
