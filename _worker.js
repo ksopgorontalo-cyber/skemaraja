@@ -1541,7 +1541,16 @@ async function handleManualCheckin(request, env, corsHeaders) {
 
 async function handleCheckinSingleUser(request, env, corsHeaders) {
   const config = await getConfig(env);
-  const { user } = await request.json();
+  const { user: requestUser } = await request.json();
+
+  // Cari user di config yang tersimpan untuk mendapatkan phone
+  const storedUser = config.users.find(u => u.nip === requestUser.nip);
+
+  // Merge data: gunakan data dari request, tapi tambahkan phone dari stored config
+  const user = {
+    ...requestUser,
+    phone: storedUser?.phone || requestUser.phone || ''
+  };
 
   // Dapatkan jam saat ini dalam WITA (UTC+8)
   const now = new Date();
