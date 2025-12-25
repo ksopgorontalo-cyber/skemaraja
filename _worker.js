@@ -1089,7 +1089,7 @@ async function handleDashboard(env, corsHeaders) {
       
       <div class="btn-group" style="flex-wrap: wrap;">
         <button type="button" class="btn btn-success" onclick="saveFonnteConfig()">💾 Simpan Token</button>
-        <button type="button" class="btn btn-primary" onclick="connectFonnteDevice()">📲 Connect Device</button>
+        <button type="button" id="btnConnectDevice" class="btn btn-primary" onclick="toggleFonnteDevice()">📲 Connect Device</button>
         <button type="button" class="btn btn-info" onclick="checkFonnteStatus()">🔍 Cek Status</button>
         <button type="button" class="btn btn-warning" onclick="sendTestWA()">📤 Test Kirim WA</button>
       </div>
@@ -1541,24 +1541,82 @@ async function handleDashboard(env, corsHeaders) {
             statusEl.style.background = '#dcfce7';
             iconEl.textContent = '🟢';
             textEl.innerHTML = \`<strong>Connected</strong> - \${data.device?.name || ''} (\${data.device?.number || ''})\`;
+            updateConnectButton(true);
           } else if (data.status === 'disconnected') {
             statusEl.style.background = '#fee2e2';
             iconEl.textContent = '🔴';
             textEl.textContent = 'Disconnected - ' + (data.message || 'Device tidak terhubung');
+            updateConnectButton(false);
           } else {
             statusEl.style.background = '#fef3c7';
             iconEl.textContent = '⚠️';
             textEl.textContent = data.message || 'Status tidak diketahui';
+            updateConnectButton(false);
           }
         } else {
           statusEl.style.background = '#fee2e2';
           iconEl.textContent = '❌';
           textEl.textContent = 'Error: ' + data.message;
+          updateConnectButton(false);
         }
       } catch (err) {
         statusEl.style.background = '#fee2e2';
         iconEl.textContent = '❌';
         textEl.textContent = 'Error: ' + err.message;
+        updateConnectButton(false);
+      }
+    }
+
+    // Track device connection status
+    let isDeviceConnected = false;
+
+    function updateConnectButton(connected) {
+      isDeviceConnected = connected;
+      const btn = document.getElementById('btnConnectDevice');
+      if (btn) {
+        if (connected) {
+          btn.innerHTML = '🔌 Disconnect';
+          btn.className = 'btn btn-danger';
+        } else {
+          btn.innerHTML = '📲 Connect Device';
+          btn.className = 'btn btn-primary';
+        }
+      }
+    }
+
+    async function toggleFonnteDevice() {
+      if (isDeviceConnected) {
+        // Disconnect device
+        if (!confirm('Apakah Anda yakin ingin disconnect WhatsApp device?')) return;
+        
+        showResult('pending', '⏳ Disconnecting device...');
+        
+        try {
+          const index = document.getElementById('fonnteDeviceSelect').value;
+          let deviceToken = '';
+          if (index !== '' && fonnteDevices[index]) {
+            deviceToken = fonnteDevices[index].token;
+          }
+          
+          const res = await fetch('https://api.fonnte.com/disconnect', {
+            method: 'POST',
+            headers: { 'Authorization': deviceToken }
+          });
+          const data = await res.json();
+          
+          if (data.status === true) {
+            showResult('success', '✅ Device disconnected successfully');
+            updateConnectButton(false);
+            checkFonnteStatus();
+          } else {
+            showResult('error', '❌ ' + (data.reason || 'Failed to disconnect'));
+          }
+        } catch (err) {
+          showResult('error', '❌ Error: ' + err.message);
+        }
+      } else {
+        // Connect device (show QR)
+        await connectFonnteDevice();
       }
     }
 
