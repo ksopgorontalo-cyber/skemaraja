@@ -35,7 +35,7 @@ const SKEMARAJA_AUTH = `${SKEMARAJA_BASE}/authenticate`;
 
 // Authentication settings
 const AUTH_COOKIE_NAME = "__CHECKIN_AUTH__";
-const AUTH_PASSWORD = "Google.com12"; // Ganti dengan password yang aman!
+const AUTH_PASSWORD_DEFAULT = "Google.com12"; // Default password, can be changed from dashboard
 
 // Fonnte WhatsApp API (dapatkan token di https://fonnte.com)
 const FONNTE_API = "https://api.fonnte.com/send";
@@ -84,6 +84,19 @@ function getRandomDelayForSchedule(schedule, currentMinutes) {
     delayMs: delayMinutes * 60 * 1000,
     targetTime: `${Math.floor(targetMinutes / 60)}:${String(targetMinutes % 60).padStart(2, '0')}`
   };
+}
+
+// Get auth password from KV or use default
+async function getAuthPassword(env) {
+  try {
+    const stored = await env.CHECKIN_KV.get("auth_password");
+    if (stored) {
+      return stored;
+    }
+  } catch (e) {
+    console.log("Error reading auth password from KV:", e.message);
+  }
+  return AUTH_PASSWORD_DEFAULT;
 }
 
 // Send WhatsApp notification via Fonnte
@@ -265,6 +278,9 @@ export default {
       }
       if (path === "/fonnte/disconnect" && request.method === "POST") {
         return handleFonnteDisconnect(env, corsHeaders);
+      }
+      if (path === "/change-password" && request.method === "POST") {
+        return handleChangePassword(request, env, corsHeaders);
       }
 
       return new Response("Not Found", { status: 404, headers: corsHeaders });
@@ -1097,6 +1113,31 @@ async function handleDashboard(env, corsHeaders) {
       </div>
     </div>
 
+    <!-- Settings Card -->
+    <div class="card">
+      <h2>⚙️ Pengaturan</h2>
+      
+      <div style="margin-bottom: 16px;">
+        <h3 style="margin-bottom: 12px;">🔐 Ubah Password Dashboard</h3>
+        <div class="form-grid" style="gap: 12px;">
+          <div class="form-group">
+            <label>Password Saat Ini</label>
+            <input type="password" id="currentPassword" placeholder="Masukkan password saat ini">
+          </div>
+          <div class="form-group">
+            <label>Password Baru</label>
+            <input type="password" id="newPassword" placeholder="Password baru (min 6 karakter)">
+          </div>
+          <div class="form-group">
+            <label>Konfirmasi Password Baru</label>
+            <input type="password" id="confirmPassword" placeholder="Ulangi password baru">
+          </div>
+        </div>
+        <button type="button" class="btn btn-warning" onclick="changePassword()" style="margin-top: 12px;">🔑 Ubah Password</button>
+      </div>
+    </div>
+
+
         <div class="btn-group">
           <button type="submit" class="btn btn-primary">💾 Simpan Konfigurasi</button>
           <button type="button" class="btn btn-success" onclick="checkinAll()">🚀 Check-in Semua User</button>
@@ -1608,6 +1649,51 @@ async function handleDashboard(env, corsHeaders) {
       try {
         // For now, just trigger a check-in which will send notification
         showResult('success', '✅ Gunakan tombol 🚀 Check-in untuk test pengiriman WA');
+      } catch (err) {
+        showResult('error', '❌ Error: ' + err.message);
+      }
+    }
+
+    // Change Password Function
+    async function changePassword() {
+      const currentPassword = document.getElementById('currentPassword').value;
+      const newPassword = document.getElementById('newPassword').value;
+      const confirmPassword = document.getElementById('confirmPassword').value;
+      
+      if (!currentPassword) {
+        showResult('error', '❌ Masukkan password saat ini');
+        return;
+      }
+      if (!newPassword || newPassword.length < 6) {
+        showResult('error', '❌ Password baru minimal 6 karakter');
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        showResult('error', '❌ Konfirmasi password tidak cocok');
+        return;
+      }
+      
+      showResult('pending', '⏳ Mengubah password...');
+      
+      try {
+        const res = await fetch('/change-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ currentPassword, newPassword })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+          showResult('success', '✅ ' + data.message);
+          // Clear form
+          document.getElementById('currentPassword').value = '';
+          document.getElementById('newPassword').value = '';
+          document.getElementById('confirmPassword').value = '';
+          // Redirect to login after 2 seconds
+          setTimeout(() => { window.location.href = '/logout'; }, 2000);
+        } else {
+          showResult('error', '❌ ' + data.message);
+        }
       } catch (err) {
         showResult('error', '❌ Error: ' + err.message);
       }
@@ -2194,6 +2280,52 @@ async function handleFonnteDisconnect(env, corsHeaders) {
   }
 }
 
+// Change dashboard password
+async function handleChangePassword(request, env, corsHeaders) {
+  try {
+    const { currentPassword, newPassword } = await request.json();
+
+    // Verify current password
+    const storedPassword = await getAuthPassword(env);
+    if (currentPassword !== storedPassword) {
+      return new Response(JSON.stringify({
+        success: false,
+        message: "Password saat ini salah"
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    // Validate new password
+    if (!newPassword || newPassword.length < 6) {
+      return new Response(JSON.stringify({
+        success: false,
+        message: "Password baru minimal 6 karakter"
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    // Save new password to KV
+    await env.CHECKIN_KV.put("auth_password", newPassword);
+
+    return new Response(JSON.stringify({
+      success: true,
+      message: "Password berhasil diubah! Silakan login ulang."
+    }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  } catch (error) {
+    console.error("Error changing password:", error);
+    return new Response(JSON.stringify({
+      success: false,
+      message: error.message
+    }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  }
+}
+
 async function handleGetLogs(env, corsHeaders) {
   const logs = await getLogs(env);
 
@@ -2443,7 +2575,8 @@ async function handleLogin(request, env, corsHeaders) {
   const formData = await request.formData();
   const password = formData.get("password") || "";
 
-  const authPassword = env.AUTH_PASSWORD || AUTH_PASSWORD;
+  // Get password from KV (or use default)
+  const authPassword = await getAuthPassword(env);
 
   if (password === authPassword) {
     // Login berhasil - set cookie
