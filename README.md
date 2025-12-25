@@ -64,7 +64,7 @@ wrangler deploy
 - **KSOP Gorontalo**: 0.5164448, 123.0635259
 
 ### Password Default:
-- **Dashboard**: `admin123`
+- **Dashboard**: `Google.com12`
 
 Ubah password via code di `_worker.js`:
 ```javascript
