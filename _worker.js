@@ -1505,12 +1505,13 @@ async function handleDashboard(env, corsHeaders) {
         const data = await res.json();
         
         if (data.success && data.qr) {
-          // Show QR modal
+          // Show QR modal - Fonnte returns base64 PNG, convert to data URL
+          const qrSrc = data.qr.startsWith('data:') ? data.qr : \`data:image/png;base64,\${data.qr}\`;
           const qrHtml = \`
             <div id="qrModal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); display:flex; align-items:center; justify-content:center; z-index:9999;" onclick="this.remove()">
               <div style="background:white; padding:24px; border-radius:16px; text-align:center; max-width:400px;" onclick="event.stopPropagation()">
                 <h3 style="margin-bottom:16px;">📱 Scan QR Code</h3>
-                <img src="\${data.qr}" style="max-width:300px; border-radius:8px;">
+                <img src="\${qrSrc}" style="max-width:300px; border-radius:8px;">
                 <p style="margin-top:16px; color:#666;">Buka WhatsApp > Linked Devices > Scan QR</p>
                 <button class="btn btn-primary" onclick="document.getElementById('qrModal').remove(); checkFonnteStatus();" style="margin-top:16px;">✅ Selesai</button>
               </div>
