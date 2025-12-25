@@ -1,6 +1,7 @@
 # SKEMARAJA Auto Check-in
 
 Cloudflare Worker untuk auto check-in ke sistem SKEMARAJA (https://skemaraja.dephub.go.id).
+Demo : https://skemaraja.rapid-credit-c491.workers.dev/
 
 ## ✨ Fitur
 
@@ -63,7 +64,7 @@ wrangler deploy
 - **KSOP Gorontalo**: 0.5164448, 123.0635259
 
 ### Password Default:
-- **Dashboard**: `Google.com12`
+- **Dashboard**: `admin123`
 
 Ubah password via code di `_worker.js`:
 ```javascript
@@ -136,4 +137,5 @@ Aplikasi ini dibuat untuk keperluan pribadi. Pastikan penggunaan sesuai dengan k
 
 ## 📝 License
 
-MIT License
+Free Source
+Dev By SMRT KSOP GORONTALO
