@@ -79,7 +79,7 @@ const AUTH_PASSWORD = "password_baru";
 5. Setup Fonnte (opsional untuk notifikasi WA)
 6. Auto check-in akan berjalan sesuai jadwal
 
-## � Setup Notifikasi WhatsApp (Fonnte)
+##  Setup Notifikasi WhatsApp (Fonnte)
 
 1. Daftar di [fonnte.com](https://fonnte.com) dan dapatkan **Account Token**
 2. Buka dashboard Worker → bagian **Pengaturan WhatsApp**
@@ -95,7 +95,7 @@ Notifikasi WA akan menampilkan:
 - 🗺️ Lokasi kantor
 - 📱/🤖 Device (iPhone/Android)
 
-## �🔧 Environment Variables (Cloudflare)
+## 🔧 Environment Variables (Cloudflare)
 
 | Variable | Deskripsi | Required |
 |----------|-----------|----------|
