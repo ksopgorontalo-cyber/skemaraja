@@ -20,9 +20,9 @@ const DEFAULT_CONFIG = {
     longitude: 123.0635259,
     name: "KSOP Gorontalo"
   },
-  // Multiple Credentials - array of users
+  // Multiple Credentials - array of users (phone = nomor WhatsApp untuk notifikasi)
   users: [
-    { nip: "", password: "", name: "User 1", enabled: true }
+    { nip: "", password: "", name: "User 1", phone: "", enabled: true }
   ],
   // Timezone (Gorontalo = WITA = UTC+8)
   timezone: "Asia/Makassar"
@@ -36,6 +36,10 @@ const SKEMARAJA_AUTH = `${SKEMARAJA_BASE}/authenticate`;
 // Authentication settings
 const AUTH_COOKIE_NAME = "__CHECKIN_AUTH__";
 const AUTH_PASSWORD = "Google.com12"; // Ganti dengan password yang aman!
+
+// Fonnte WhatsApp API (dapatkan token di https://fonnte.com)
+const FONNTE_API = "https://api.fonnte.com/send";
+// Token akan diambil dari environment variable FONNTE_TOKEN
 
 // Random Mobile User-Agents (Android & iPhone)
 const MOBILE_USER_AGENTS = [
@@ -80,6 +84,61 @@ function getRandomDelayForSchedule(schedule, currentMinutes) {
     delayMs: delayMinutes * 60 * 1000,
     targetTime: `${Math.floor(targetMinutes / 60)}:${String(targetMinutes % 60).padStart(2, '0')}`
   };
+}
+
+// Send WhatsApp notification via Fonnte
+async function sendWhatsAppNotification(env, user, schedule, success, message, checkinTime) {
+  // Skip jika tidak ada nomor HP atau token Fonnte
+  if (!user.phone || !env.FONNTE_TOKEN) {
+    console.log(`📱 Skip WA notification: ${!user.phone ? 'No phone' : 'No Fonnte token'}`);
+    return;
+  }
+
+  // Format nomor HP (pastikan format 62xxx)
+  let phone = user.phone.replace(/\D/g, ''); // Hapus non-digit
+  if (phone.startsWith('0')) {
+    phone = '62' + phone.substring(1);
+  } else if (!phone.startsWith('62')) {
+    phone = '62' + phone;
+  }
+
+  // Buat pesan notifikasi
+  const statusEmoji = success ? '✅' : '❌';
+  const statusText = success ? 'BERHASIL' : 'GAGAL';
+  const waMessage = `${statusEmoji} *Check-in SKEMARAJA ${statusText}*
+
+👤 *Nama:* ${user.name}
+📅 *Jadwal:* ${schedule.name}
+🕐 *Waktu:* ${checkinTime || new Date().toLocaleString('id-ID', { timeZone: 'Asia/Makassar' })}
+📍 *Status:* ${schedule.status_wfh === '1' ? 'WFH' : schedule.status_wfh === '2' ? 'WFO' : 'Dinas Luar'}
+
+${success ? '🎉 Terima kasih sudah absen tepat waktu!' : '⚠️ ' + message}
+
+_Auto Check-in by SKEMARAJA Worker_`;
+
+  try {
+    const response = await fetch(FONNTE_API, {
+      method: 'POST',
+      headers: {
+        'Authorization': env.FONNTE_TOKEN,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        target: phone,
+        message: waMessage,
+        countryCode: '62'
+      })
+    });
+
+    const result = await response.json();
+    if (result.status) {
+      console.log(`📱 WA notification sent to ${user.name} (${phone})`);
+    } else {
+      console.log(`📱 WA notification failed: ${result.reason || 'Unknown error'}`);
+    }
+  } catch (error) {
+    console.error(`📱 WA notification error: ${error.message}`);
+  }
 }
 
 // ============================================================================
@@ -561,6 +620,9 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
       status_wfh: schedule.status_wfh
     });
 
+    // Kirim notifikasi WhatsApp
+    await sendWhatsAppNotification(env, user, schedule, success, message, new Date().toLocaleString('id-ID', { timeZone: 'Asia/Makassar' }));
+
     // Logout setelah check-in untuk membersihkan session
     try {
       await fetch("https://skemaraja.dephub.go.id/logout", {
@@ -841,7 +903,7 @@ async function handleDashboard(env, corsHeaders) {
 
     <!-- Users Card -->
     <div class="card">
-      <h2>👥 Daftar Pegawai</h2>
+      <h2>👥 Daftar User</h2>
       
       ${config.users.length === 0 || !config.users.some(u => u.nip) ? '<div class="alert alert-warning">⚠️ Belum ada user yang dikonfigurasi. Tambahkan user di bawah.</div>' : ''}
       
@@ -852,10 +914,11 @@ async function handleDashboard(env, corsHeaders) {
               <input type="hidden" name="user_${i}_name" value="${user.name || ''}">
               <input type="hidden" name="user_${i}_nip" value="${user.nip || ''}">
               <input type="hidden" name="user_${i}_password" value="${user.password || ''}">
+              <input type="hidden" name="user_${i}_phone" value="${user.phone || ''}">
               <div class="user-header" style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
                   <span class="user-name">${user.name || 'User ' + (i + 1)}</span>
-                  <div style="font-size: 12px; color: #666; margin-top: 4px;">NIP: ${user.nip || '-'}</div>
+                  <div style="font-size: 12px; color: #666; margin-top: 4px;">NIP: ${user.nip || '-'} | 📱 ${user.phone || '-'}</div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                   <button type="button" class="btn btn-success btn-sm" onclick="checkinUser(${i})" title="Check-in">🚀</button>
@@ -1008,10 +1071,11 @@ async function handleDashboard(env, corsHeaders) {
         <input type="hidden" name="user_\${userCount}_name" value="">
         <input type="hidden" name="user_\${userCount}_nip" value="">
         <input type="hidden" name="user_\${userCount}_password" value="">
+        <input type="hidden" name="user_\${userCount}_phone" value="">
         <div class="user-header" style="display: flex; justify-content: space-between; align-items: center;">
           <div>
             <span class="user-name">User \${userCount + 1}</span>
-            <div style="font-size: 12px; color: #666; margin-top: 4px;">NIP: -</div>
+            <div style="font-size: 12px; color: #666; margin-top: 4px;">NIP: - | 📱 -</div>
           </div>
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <button type="button" class="btn btn-success btn-sm" onclick="checkinUser(\${userCount})" title="Check-in">✓</button>
@@ -1047,10 +1111,12 @@ async function handleDashboard(env, corsHeaders) {
       const nameInput = card.querySelector('input[name$="_name"]');
       const nipInput = card.querySelector('input[name$="_nip"]');
       const passwordInput = card.querySelector('input[name$="_password"]');
+      const phoneInput = card.querySelector('input[name$="_phone"]');
 
       document.getElementById('editUserName').value = nameInput ? nameInput.value : '';
       document.getElementById('editUserNip').value = nipInput ? nipInput.value : '';
       document.getElementById('editUserPassword').value = passwordInput ? passwordInput.value : '';
+      document.getElementById('editUserPhone').value = phoneInput ? phoneInput.value : '';
 
       document.getElementById('editModal').style.display = 'flex';
     }
@@ -1069,22 +1135,25 @@ async function handleDashboard(env, corsHeaders) {
       const name = document.getElementById('editUserName').value;
       const nip = document.getElementById('editUserNip').value;
       const password = document.getElementById('editUserPassword').value;
+      const phone = document.getElementById('editUserPhone').value;
 
       // Update hidden inputs
       const nameInput = card.querySelector('input[name$="_name"]');
       const nipInput = card.querySelector('input[name$="_nip"]');
       const passwordInput = card.querySelector('input[name$="_password"]');
+      const phoneInput = card.querySelector('input[name$="_phone"]');
 
       if (nameInput) nameInput.value = name;
       if (nipInput) nipInput.value = nip;
       if (passwordInput) passwordInput.value = password;
+      if (phoneInput) phoneInput.value = phone;
 
       // Update display
       const userNameSpan = card.querySelector('.user-name');
       const nipDisplay = card.querySelector('.user-header > div:first-child > div');
 
       if (userNameSpan) userNameSpan.textContent = name || 'User ' + (currentEditIndex + 1);
-      if (nipDisplay) nipDisplay.textContent = 'NIP: ' + (nip ? nip.substring(0, 10) + '...' : '-');
+      if (nipDisplay) nipDisplay.textContent = 'NIP: ' + (nip || '-') + ' | 📱 ' + (phone || '-');
 
       // Update card class
       if (nip && card.querySelector('input[name$="_enabled"]')?.checked) {
@@ -1106,12 +1175,14 @@ async function handleDashboard(env, corsHeaders) {
         const nameInput = card.querySelector('input[name$="_name"]');
         const nipInput = card.querySelector('input[name$="_nip"]');
         const passwordInput = card.querySelector('input[name$="_password"]');
+        const phoneInput = card.querySelector('input[name$="_phone"]');
         const enabledInput = card.querySelector('input[name$="_enabled"]');
 
         users.push({
           name: nameInput ? nameInput.value : 'User',
           nip: nipInput ? nipInput.value : '',
           password: passwordInput ? passwordInput.value : '',
+          phone: phoneInput ? phoneInput.value : '',
           enabled: enabledInput ? enabledInput.checked : false
         });
       });
@@ -1296,10 +1367,11 @@ async function handleDashboard(env, corsHeaders) {
         <input type="hidden" name="user_\${userCount}_name" value="\${name}">
         <input type="hidden" name="user_\${userCount}_nip" value="\${nip}">
         <input type="hidden" name="user_\${userCount}_password" value="\${password}">
+        <input type="hidden" name="user_\${userCount}_phone" value="">
         <div class="user-header" style="display: flex; justify-content: space-between; align-items: center;">
           <div>
             <span class="user-name">\${name}</span>
-            <div style="font-size: 12px; color: #666; margin-top: 4px;">NIP: \${nip || '-'}</div>
+            <div style="font-size: 12px; color: #666; margin-top: 4px;">NIP: \${nip || '-'} | 📱 -</div>
           </div>
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <button type="button" class="btn btn-success btn-sm" onclick="checkinUser(\${userCount})" title="Check-in">✓</button>
@@ -1352,6 +1424,10 @@ async function handleDashboard(env, corsHeaders) {
       <div class="form-group">
         <label>Password</label>
         <input type="password" id="editUserPassword" placeholder="Password">
+      </div>
+      <div class="form-group">
+        <label>No. WhatsApp</label>
+        <input type="text" id="editUserPhone" placeholder="08xxxxxxxxxx">
       </div>
       <div style="display: flex; gap: 10px; margin-top: 20px;">
         <button type="button" class="btn btn-primary" onclick="saveEditUser()" style="flex: 1;">💾 Simpan</button>
