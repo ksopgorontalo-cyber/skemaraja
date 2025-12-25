@@ -789,10 +789,10 @@ async function handleDashboard(env, corsHeaders) {
               <div class="user-header" style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
                   <span class="user-name">${user.name || 'User ' + (i + 1)}</span>
-                  <div style="font-size: 12px; color: #666; margin-top: 4px;">NIP: ${user.nip ? user.nip.substring(0, 10) + '...' : '-'}</div>
+                  <div style="font-size: 12px; color: #666; margin-top: 4px;">NIP: ${user.nip || '-'}</div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                  <button type="button" class="btn btn-success btn-sm" onclick="checkinUser(${i})" title="Check-in">�</button>
+                  <button type="button" class="btn btn-success btn-sm" onclick="checkinUser(${i})" title="Check-in">🚀</button>
                   <button type="button" class="btn btn-info btn-sm" onclick="editUser(${i})" title="Edit">✏️</button>
                   <button type="button" class="btn btn-danger btn-sm" onclick="removeUser(${i})" title="Hapus">🗑️</button>
                   <label class="toggle">
@@ -940,7 +940,7 @@ async function handleDashboard(env, corsHeaders) {
             <div style="font-size: 12px; color: #666; margin-top: 4px;">NIP: -</div>
           </div>
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-            <button type="button" class="btn btn-success btn-sm" onclick="checkinUser(\${userCount})" title="Check-in">🚀</button>
+            <button type="button" class="btn btn-success btn-sm" onclick="checkinUser(\${userCount})" title="Check-in">✓</button>
             <button type="button" class="btn btn-info btn-sm" onclick="editUser(\${userCount})" title="Edit">✏️</button>
             <button type="button" class="btn btn-danger btn-sm" onclick="removeUser(\${userCount})" title="Hapus">🗑️</button>
             <label class="toggle">
@@ -1225,10 +1225,10 @@ async function handleDashboard(env, corsHeaders) {
         <div class="user-header" style="display: flex; justify-content: space-between; align-items: center;">
           <div>
             <span class="user-name">\${name}</span>
-            <div style="font-size: 12px; color: #666; margin-top: 4px;">NIP: \${nip ? nip.substring(0, 10) + '...' : '-'}</div>
+            <div style="font-size: 12px; color: #666; margin-top: 4px;">NIP: \${nip || '-'}</div>
           </div>
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-            <button type="button" class="btn btn-success btn-sm" onclick="checkinUser(\${userCount})" title="Check-in">🚀</button>
+            <button type="button" class="btn btn-success btn-sm" onclick="checkinUser(\${userCount})" title="Check-in">✓</button>
             <button type="button" class="btn btn-info btn-sm" onclick="editUser(\${userCount})" title="Edit">✏️</button>
             <button type="button" class="btn btn-danger btn-sm" onclick="removeUser(\${userCount})" title="Hapus">🗑️</button>
             <label class="toggle">
