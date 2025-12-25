@@ -87,7 +87,7 @@ function getRandomDelayForSchedule(schedule, currentMinutes) {
 }
 
 // Send WhatsApp notification via Fonnte
-async function sendWhatsAppNotification(env, user, schedule, success, message, checkinTime) {
+async function sendWhatsAppNotification(env, user, schedule, success, message, checkinTime, deviceType = 'Android', locationName = '') {
   // Get device token from KV config first, fallback to env
   let deviceToken = env.FONNTE_TOKEN;
   try {
@@ -135,16 +135,22 @@ async function sendWhatsAppNotification(env, user, schedule, success, message, c
     footerMessage = '⚠️ ' + message;
   }
 
+  // Device icon berdasarkan type
+  const deviceIcon = deviceType === 'iPhone' ? '📱' : '🤖';
+  const deviceLabel = deviceType === 'iPhone' ? 'iPhone' : 'Android';
+
   const waMessage = `${statusEmoji} *Check-in SKEMARAJA ${statusText}*
 
 👤 *Nama:* ${user.name}
 📅 *Jadwal:* ${schedule.name}
 🕐 *Waktu:* ${checkinTime || new Date().toLocaleString('id-ID', { timeZone: 'Asia/Makassar' })}
 📍 *Status:* ${schedule.status_wfh === '1' ? 'WFH' : schedule.status_wfh === '2' ? 'WFO' : 'Dinas Luar'}
+🗺️ *Lokasi:* ${locationName || 'Unknown'}
+${deviceIcon} *Device:* ${deviceLabel}
 
 ${footerMessage}
 
-_Auto Check-in by SKEMARAJA Worker_`;
+_Auto Check-in by SKEMARAJA_`;
 
   try {
     // Fonnte API menggunakan form-urlencoded, bukan JSON
@@ -667,8 +673,9 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
       status_wfh: schedule.status_wfh
     });
 
-    // Kirim notifikasi WhatsApp
-    await sendWhatsAppNotification(env, user, schedule, success, message, new Date().toLocaleString('id-ID', { timeZone: 'Asia/Makassar' }));
+    // Kirim notifikasi WhatsApp (dengan info device type dan lokasi)
+    const deviceType = userAgent.includes('iPhone') ? 'iPhone' : 'Android';
+    await sendWhatsAppNotification(env, user, schedule, success, message, new Date().toLocaleString('id-ID', { timeZone: 'Asia/Makassar' }), deviceType, config.location?.name || 'KSOP Gorontalo');
 
     // Logout setelah check-in untuk membersihkan session
     try {
