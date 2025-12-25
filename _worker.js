@@ -7,11 +7,12 @@
 
 // Default Configuration (can be overridden via KV or environment variables)
 const DEFAULT_CONFIG = {
-  // Jadwal check-in (dalam timezone Asia/Makassar WITA = UTC+8 untuk Gorontalo)
+  // Jadwal check-in dengan random time range (dalam timezone Asia/Makassar WITA = UTC+8 untuk Gorontalo)
+  // startHour/startMinute = waktu awal range, endHour/endMinute = waktu akhir range
   schedules: [
-    { hour: 7, minute: 30, status_wfh: "2", shift: "1", enabled: true, name: "Pagi" },
-    { hour: 12, minute: 30, status_wfh: "2", shift: "1", enabled: true, name: "Siang" },
-    { hour: 16, minute: 30, status_wfh: "2", shift: "1", enabled: true, name: "Sore" }
+    { name: "Pagi", startHour: 7, startMinute: 0, endHour: 8, endMinute: 0, status_wfh: "2", shift: "1", enabled: true },
+    { name: "Siang", startHour: 12, startMinute: 5, endHour: 13, endMinute: 0, status_wfh: "2", shift: "1", enabled: true },
+    { name: "Sore", startHour: 17, startMinute: 0, endHour: 18, endMinute: 0, status_wfh: "2", shift: "1", enabled: true }
   ],
   // Lokasi kantor untuk check-in
   location: {
@@ -59,6 +60,26 @@ const MOBILE_USER_AGENTS = [
 // Get random User-Agent
 function getRandomUserAgent() {
   return MOBILE_USER_AGENTS[Math.floor(Math.random() * MOBILE_USER_AGENTS.length)];
+}
+
+// Get random time within schedule range (returns delay in milliseconds)
+function getRandomDelayForSchedule(schedule, currentMinutes) {
+  const startMinutes = schedule.startHour * 60 + schedule.startMinute;
+  const endMinutes = schedule.endHour * 60 + schedule.endMinute;
+  const rangeMinutes = endMinutes - startMinutes;
+
+  // Random waktu dalam range
+  const randomMinutes = Math.floor(Math.random() * rangeMinutes);
+  const targetMinutes = startMinutes + randomMinutes;
+
+  // Hitung delay dari waktu sekarang
+  let delayMinutes = targetMinutes - currentMinutes;
+  if (delayMinutes < 0) delayMinutes = 0; // Jika sudah lewat, langsung check-in
+
+  return {
+    delayMs: delayMinutes * 60 * 1000,
+    targetTime: `${Math.floor(targetMinutes / 60)}:${String(targetMinutes % 60).padStart(2, '0')}`
+  };
 }
 
 // ============================================================================
@@ -165,34 +186,49 @@ export default {
         return;
       }
 
-      // Cek setiap jadwal
+      // Cek setiap jadwal - apakah waktu sekarang dalam range
       for (const schedule of config.schedules) {
         if (!schedule.enabled) continue;
 
-        // Toleransi 5 menit untuk cron
-        const scheduledMinutes = schedule.hour * 60 + schedule.minute;
+        // Cek apakah waktu sekarang dalam range jadwal
+        const startMinutes = schedule.startHour * 60 + schedule.startMinute;
+        const endMinutes = schedule.endHour * 60 + schedule.endMinute;
         const currentMinutes = currentHour * 60 + currentMinute;
-        const diff = Math.abs(scheduledMinutes - currentMinutes);
 
-        if (diff <= 5) {
-          console.log(`✅ Jadwal cocok: ${schedule.name} (${schedule.hour}:${schedule.minute})`);
+        // Hanya proses jika tepat di awal range (toleransi 2 menit)
+        // Ini agar tidak check-in ulang jika cron trigger lagi
+        if (currentMinutes >= startMinutes && currentMinutes <= startMinutes + 2) {
+          console.log(`✅ Jadwal ${schedule.name} dimulai! Range: ${schedule.startHour}:${String(schedule.startMinute).padStart(2, '0')} - ${schedule.endHour}:${String(schedule.endMinute).padStart(2, '0')}`);
 
           // Hitung jumlah user yang akan check-in
           const activeUsers = config.users.filter(u => u.enabled && u.nip && u.password);
           console.log(`👥 Total user aktif: ${activeUsers.length}`);
 
-          // Check-in untuk semua user yang enabled
+          // Check-in untuk semua user dengan random delay
           let userIndex = 0;
           for (const user of activeUsers) {
             userIndex++;
-            console.log(`👤 [${userIndex}/${activeUsers.length}] Check-in untuk: ${user.name} (${user.nip.substring(0, 6)}****)`);
+
+            // Hitung random delay untuk user ini
+            const { delayMs, targetTime } = getRandomDelayForSchedule(schedule, currentMinutes);
+
+            console.log(`👤 [${userIndex}/${activeUsers.length}] ${user.name} dijadwalkan check-in jam ${targetTime} (delay ${Math.round(delayMs / 60000)} menit)`);
+
+            // Untuk Cloudflare Workers, kita tidak bisa delay lama
+            // Jadi kita langsung log waktu target dan check-in sekarang dengan random detik saja
+            const randomSeconds = Math.floor(Math.random() * 30); // 0-30 detik random
+            if (randomSeconds > 0) {
+              await new Promise(r => setTimeout(r, randomSeconds * 1000));
+            }
+
+            console.log(`🚀 Memulai check-in untuk: ${user.name}`);
             await performCheckin(config, schedule, user, env);
 
-            // Delay 3 detik antar user (max ~8 user dalam 30 detik timeout)
-            // Kecuali user terakhir
+            // Delay 3+random detik antar user
             if (userIndex < activeUsers.length) {
-              console.log(`⏳ Menunggu 3 detik sebelum user berikutnya...`);
-              await new Promise(r => setTimeout(r, 3000));
+              const interUserDelay = 3000 + Math.floor(Math.random() * 5000); // 3-8 detik
+              console.log(`⏳ Menunggu ${Math.round(interUserDelay / 1000)} detik sebelum user berikutnya...`);
+              await new Promise(r => setTimeout(r, interUserDelay));
             }
           }
 
@@ -858,25 +894,33 @@ async function handleDashboard(env, corsHeaders) {
         </div>
 
         <!-- Schedules -->
-        <h3>📅 Jadwal Check-in</h3>
+        <h3>📅 Jadwal Check-in (Random dalam Range)</h3>
         <div id="schedules">
           ${config.schedules.map((s, i) => `
             <div class="schedule-item">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px">
-                <span class="schedule-time">${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')} - ${s.name}</span>
+                <span class="schedule-time">${s.name}: ${String(s.startHour || 7).padStart(2, '0')}:${String(s.startMinute || 0).padStart(2, '0')} - ${String(s.endHour || 8).padStart(2, '0')}:${String(s.endMinute || 0).padStart(2, '0')}</span>
                 <label class="toggle">
                   <input type="checkbox" name="schedule_${i}_enabled" ${s.enabled ? 'checked' : ''}>
                   <span class="slider"></span>
                 </label>
               </div>
-              <div class="grid grid-3">
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr; gap: 10px;">
                 <div class="form-group">
-                  <label>Jam</label>
-                  <input type="number" name="schedule_${i}_hour" value="${s.hour}" min="0" max="23">
+                  <label>Mulai Jam</label>
+                  <input type="number" name="schedule_${i}_startHour" value="${s.startHour || 7}" min="0" max="23">
                 </div>
                 <div class="form-group">
                   <label>Menit</label>
-                  <input type="number" name="schedule_${i}_minute" value="${s.minute}" min="0" max="59">
+                  <input type="number" name="schedule_${i}_startMinute" value="${s.startMinute || 0}" min="0" max="59">
+                </div>
+                <div class="form-group">
+                  <label>Sampai Jam</label>
+                  <input type="number" name="schedule_${i}_endHour" value="${s.endHour || 8}" min="0" max="23">
+                </div>
+                <div class="form-group">
+                  <label>Menit</label>
+                  <input type="number" name="schedule_${i}_endMinute" value="${s.endMinute || 0}" min="0" max="59">
                 </div>
                 <div class="form-group">
                   <label>Status</label>
@@ -1080,9 +1124,9 @@ async function handleDashboard(env, corsHeaders) {
           name: formData.get('locationName')
         },
         schedules: [
-          { name: "Pagi", hour: parseInt(formData.get('schedule_0_hour')), minute: parseInt(formData.get('schedule_0_minute')), status_wfh: formData.get('schedule_0_status'), shift: "1", enabled: formData.get('schedule_0_enabled') === 'on' },
-          { name: "Siang", hour: parseInt(formData.get('schedule_1_hour')), minute: parseInt(formData.get('schedule_1_minute')), status_wfh: formData.get('schedule_1_status'), shift: "1", enabled: formData.get('schedule_1_enabled') === 'on' },
-          { name: "Sore", hour: parseInt(formData.get('schedule_2_hour')), minute: parseInt(formData.get('schedule_2_minute')), status_wfh: formData.get('schedule_2_status'), shift: "1", enabled: formData.get('schedule_2_enabled') === 'on' }
+          { name: "Pagi", startHour: parseInt(formData.get('schedule_0_startHour')), startMinute: parseInt(formData.get('schedule_0_startMinute')), endHour: parseInt(formData.get('schedule_0_endHour')), endMinute: parseInt(formData.get('schedule_0_endMinute')), status_wfh: formData.get('schedule_0_status'), shift: "1", enabled: formData.get('schedule_0_enabled') === 'on' },
+          { name: "Siang", startHour: parseInt(formData.get('schedule_1_startHour')), startMinute: parseInt(formData.get('schedule_1_startMinute')), endHour: parseInt(formData.get('schedule_1_endHour')), endMinute: parseInt(formData.get('schedule_1_endMinute')), status_wfh: formData.get('schedule_1_status'), shift: "1", enabled: formData.get('schedule_1_enabled') === 'on' },
+          { name: "Sore", startHour: parseInt(formData.get('schedule_2_startHour')), startMinute: parseInt(formData.get('schedule_2_startMinute')), endHour: parseInt(formData.get('schedule_2_endHour')), endMinute: parseInt(formData.get('schedule_2_endMinute')), status_wfh: formData.get('schedule_2_status'), shift: "1", enabled: formData.get('schedule_2_enabled') === 'on' }
         ],
         timezone: "Asia/Makassar"
       };
