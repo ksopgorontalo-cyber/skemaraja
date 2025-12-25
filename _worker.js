@@ -2,6 +2,7 @@
 // SKEMARAJA Auto Check-in Cloudflare Worker
 // Endpoint: https://skemaraja.dephub.go.id/authenticate
 // Support: Multiple Credentials
+// Author: @404_notfound
 // ============================================================================
 
 // Default Configuration (can be overridden via KV or environment variables)
@@ -34,6 +35,31 @@ const SKEMARAJA_AUTH = `${SKEMARAJA_BASE}/authenticate`;
 // Authentication settings
 const AUTH_COOKIE_NAME = "__CHECKIN_AUTH__";
 const AUTH_PASSWORD = "Google.com12"; // Ganti dengan password yang aman!
+
+// Random Mobile User-Agents (Android & iPhone)
+const MOBILE_USER_AGENTS = [
+  // Android devices
+  "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.43 Mobile Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 14; SM-A546B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.43 Mobile Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 13; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.43 Mobile Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.6045.163 Mobile Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 12; Redmi Note 11 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.43 Mobile Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 13; POCO X5 Pro 5G) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.43 Mobile Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 12; M2101K6G) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.6045.163 Mobile Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 14; CPH2483) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.43 Mobile Safari/537.36",
+  // iPhone devices
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_1_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/120.0.6099.101 Mobile/15E148 Safari/604.1",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 16_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 15_8 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.8 Mobile/15E148 Safari/604.1"
+];
+
+// Get random User-Agent
+function getRandomUserAgent() {
+  return MOBILE_USER_AGENTS[Math.floor(Math.random() * MOBILE_USER_AGENTS.length)];
+}
 
 // ============================================================================
 // Main Worker Export
@@ -253,10 +279,14 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
       throw new Error("NIP atau password belum dikonfigurasi");
     }
 
+    // Random User-Agent untuk setiap user
+    const userAgent = getRandomUserAgent();
+    console.log(`📱 User-Agent: ${userAgent.includes('iPhone') ? 'iPhone' : 'Android'}`);
+
     // Step 1: Ambil halaman login untuk mendapatkan CSRF token
     const loginPageResponse = await fetch(SKEMARAJA_LOGIN, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": userAgent,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
         "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
       }
@@ -302,7 +332,7 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
     const authResponse = await fetch(SKEMARAJA_AUTH, {
       method: "POST",
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": userAgent,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
         "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
         "Content-Type": "application/x-www-form-urlencoded",
@@ -362,7 +392,7 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
         console.log("🔄 Following redirect manually...");
         const dashboardResponse = await fetch(responseLocation || SKEMARAJA_BASE, {
           headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": userAgent,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
             "Cookie": allCookies,
           },
