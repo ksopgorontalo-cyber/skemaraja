@@ -94,13 +94,8 @@ async function sendWhatsAppNotification(env, user, schedule, success, message, c
     return;
   }
 
-  // Format nomor HP (pastikan format 62xxx)
-  let phone = user.phone.replace(/\D/g, ''); // Hapus non-digit
-  if (phone.startsWith('0')) {
-    phone = '62' + phone.substring(1);
-  } else if (!phone.startsWith('62')) {
-    phone = '62' + phone;
-  }
+  // Format nomor HP (hapus karakter non-digit, countryCode akan handle 0 -> 62)
+  let phone = user.phone.replace(/\D/g, '');
 
   // Buat pesan notifikasi
   const statusEmoji = success ? '✅' : '❌';
@@ -117,24 +112,27 @@ ${success ? '🎉 Terima kasih sudah absen tepat waktu!' : '⚠️ ' + message}
 _Auto Check-in by SKEMARAJA Worker_`;
 
   try {
+    // Fonnte API menggunakan form-urlencoded, bukan JSON
+    const formData = new URLSearchParams();
+    formData.append('target', phone);
+    formData.append('message', waMessage);
+    formData.append('countryCode', '62'); // Otomatis convert 08xxx ke 628xxx
+
     const response = await fetch(FONNTE_API, {
       method: 'POST',
       headers: {
-        'Authorization': env.FONNTE_TOKEN,
-        'Content-Type': 'application/json'
+        'Authorization': env.FONNTE_TOKEN  // Token langsung, tanpa Bearer
       },
-      body: JSON.stringify({
-        target: phone,
-        message: waMessage,
-        countryCode: '62'
-      })
+      body: formData
     });
 
     const result = await response.json();
-    if (result.status) {
+    console.log(`📱 Fonnte response:`, JSON.stringify(result));
+
+    if (result.status === true) {
       console.log(`📱 WA notification sent to ${user.name} (${phone})`);
     } else {
-      console.log(`📱 WA notification failed: ${result.reason || 'Unknown error'}`);
+      console.log(`📱 WA notification failed: ${result.reason || result.detail || 'Unknown error'}`);
     }
   } catch (error) {
     console.error(`📱 WA notification error: ${error.message}`);
