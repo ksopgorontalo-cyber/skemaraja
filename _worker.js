@@ -1028,45 +1028,27 @@ async function handleDashboard(env, corsHeaders) {
           </div>
         </div>
 
-        <!-- Schedules -->
-        <h3>📅 Jadwal Check-in (Random dalam Range)</h3>
-        <div id="schedules">
+        <!-- Schedules Summary -->
+        <h3>📅 Jadwal Check-in</h3>
+        <div style="background:#f8fafc; padding:12px; border-radius:8px; margin-bottom:12px;">
           ${config.schedules.map((s, i) => `
-            <div class="schedule-item">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px">
-                <span class="schedule-time">${s.name}: ${String(s.startHour || 7).padStart(2, '0')}:${String(s.startMinute || 0).padStart(2, '0')} - ${String(s.endHour || 8).padStart(2, '0')}:${String(s.endMinute || 0).padStart(2, '0')}</span>
-                <label class="toggle">
-                  <input type="checkbox" name="schedule_${i}_enabled" ${s.enabled ? 'checked' : ''}>
-                  <span class="slider"></span>
-                </label>
-              </div>
-              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr; gap: 10px;">
-                <div class="form-group">
-                  <label>Mulai Jam</label>
-                  <input type="number" name="schedule_${i}_startHour" value="${s.startHour || 7}" min="0" max="23">
-                </div>
-                <div class="form-group">
-                  <label>Menit</label>
-                  <input type="number" name="schedule_${i}_startMinute" value="${s.startMinute || 0}" min="0" max="59">
-                </div>
-                <div class="form-group">
-                  <label>Sampai Jam</label>
-                  <input type="number" name="schedule_${i}_endHour" value="${s.endHour || 8}" min="0" max="23">
-                </div>
-                <div class="form-group">
-                  <label>Menit</label>
-                  <input type="number" name="schedule_${i}_endMinute" value="${s.endMinute || 0}" min="0" max="59">
-                </div>
-                <div class="form-group">
-                  <label>Status</label>
-                  <select name="schedule_${i}_status">
-                    <option value="1" ${s.status_wfh === "1" ? 'selected' : ''}>WFH</option>
-                    <option value="2" ${s.status_wfh === "2" ? 'selected' : ''}>WFO</option>
-                    <option value="3" ${s.status_wfh === "3" ? 'selected' : ''}>Dinas Luar</option>
-                  </select>
-                </div>
-              </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; ${i > 0 ? 'border-top:1px solid #e2e8f0;' : ''}">
+              <span><strong>${s.name}:</strong> ${String(s.startHour || 7).padStart(2, '0')}:${String(s.startMinute || 0).padStart(2, '0')} - ${String(s.endHour || 8).padStart(2, '0')}:${String(s.endMinute || 0).padStart(2, '0')}</span>
+              <span style="color:${s.enabled ? '#22c55e' : '#ef4444'};">${s.enabled ? '✅ Aktif' : '❌ Nonaktif'}</span>
             </div>
+          `).join('')}
+        </div>
+        <button type="button" class="btn btn-info btn-sm" onclick="showScheduleModal()">📅 Edit Jadwal</button>
+        
+        <!-- Hidden inputs for form submission -->
+        <div id="scheduleInputs" style="display:none;">
+          ${config.schedules.map((s, i) => `
+            <input type="checkbox" name="schedule_${i}_enabled" ${s.enabled ? 'checked' : ''}>
+            <input type="number" name="schedule_${i}_startHour" value="${s.startHour || 7}">
+            <input type="number" name="schedule_${i}_startMinute" value="${s.startMinute || 0}">
+            <input type="number" name="schedule_${i}_endHour" value="${s.endHour || 8}">
+            <input type="number" name="schedule_${i}_endMinute" value="${s.endMinute || 0}">
+            <input type="hidden" name="schedule_${i}_status" value="${s.status_wfh || '2'}">
           `).join('')}
         </div>
     
@@ -1113,35 +1095,11 @@ async function handleDashboard(env, corsHeaders) {
       </div>
     </div>
 
-    <!-- Settings Card -->
-    <div class="card">
-      <h2>⚙️ Pengaturan</h2>
-      
-      <div style="margin-bottom: 16px;">
-        <h3 style="margin-bottom: 12px;">🔐 Ubah Password Dashboard</h3>
-        <div class="form-grid" style="gap: 12px;">
-          <div class="form-group">
-            <label>Password Saat Ini</label>
-            <input type="password" id="currentPassword" placeholder="Masukkan password saat ini">
-          </div>
-          <div class="form-group">
-            <label>Password Baru</label>
-            <input type="password" id="newPassword" placeholder="Password baru (min 6 karakter)">
-          </div>
-          <div class="form-group">
-            <label>Konfirmasi Password Baru</label>
-            <input type="password" id="confirmPassword" placeholder="Ulangi password baru">
-          </div>
-        </div>
-        <button type="button" class="btn btn-warning" onclick="changePassword()" style="margin-top: 12px;">🔑 Ubah Password</button>
-      </div>
-    </div>
-
-
         <div class="btn-group">
           <button type="submit" class="btn btn-primary">💾 Simpan Konfigurasi</button>
           <button type="button" class="btn btn-success" onclick="checkinAll()">🚀 Check-in Semua User</button>
           <button type="button" class="btn btn-primary" onclick="testConnection()">🔗 Test Koneksi</button>
+          <button type="button" class="btn btn-warning" onclick="showPasswordModal()">⚙️ Pengaturan</button>
         </div>
       </form>
       
@@ -1168,6 +1126,84 @@ async function handleDashboard(env, corsHeaders) {
     }
       </div>
       <a href="/logs" style="display: block; margin-top: 16px; color: #1e3c72">Lihat semua log →</a>
+    </div>
+  </div>
+
+  <!-- Password Settings Modal -->
+  <div id="passwordModal" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+    <div class="modal-content" style="background:white; padding:24px; border-radius:16px; width:90%; max-width:400px;">
+      <h3 style="margin-bottom:20px; color:#1e3c72;">⚙️ Pengaturan</h3>
+      
+      <h4 style="margin-bottom:12px;">🔐 Ubah Password Dashboard</h4>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label>Password Saat Ini</label>
+        <input type="password" id="currentPassword" placeholder="Masukkan password saat ini" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;">
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label>Password Baru</label>
+        <input type="password" id="newPassword" placeholder="Password baru (min 6 karakter)" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;">
+      </div>
+      <div class="form-group" style="margin-bottom:16px;">
+        <label>Konfirmasi Password Baru</label>
+        <input type="password" id="confirmPassword" placeholder="Ulangi password baru" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;">
+      </div>
+      
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button type="button" class="btn btn-warning" onclick="changePassword()">🔑 Ubah Password</button>
+        <button type="button" class="btn btn-primary" onclick="hidePasswordModal()">❌ Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Schedule Settings Modal -->
+  <div id="scheduleModal" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center; overflow-y:auto;">
+    <div class="modal-content" style="background:white; padding:24px; border-radius:16px; width:90%; max-width:600px; margin:20px auto;">
+      <h3 style="margin-bottom:20px; color:#1e3c72;">📅 Edit Jadwal Check-in</h3>
+      
+      <div id="scheduleModalContent">
+        ${config.schedules.map((s, i) => `
+          <div style="background:#f8fafc; padding:16px; border-radius:8px; margin-bottom:16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+              <strong>${s.name}</strong>
+              <label class="toggle">
+                <input type="checkbox" id="modal_schedule_${i}_enabled" ${s.enabled ? 'checked' : ''}>
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:8px;">
+              <div class="form-group">
+                <label style="font-size:12px;">Mulai Jam</label>
+                <input type="number" id="modal_schedule_${i}_startHour" value="${s.startHour || 7}" min="0" max="23" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;">
+              </div>
+              <div class="form-group">
+                <label style="font-size:12px;">Menit</label>
+                <input type="number" id="modal_schedule_${i}_startMinute" value="${s.startMinute || 0}" min="0" max="59" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;">
+              </div>
+              <div class="form-group">
+                <label style="font-size:12px;">Sampai Jam</label>
+                <input type="number" id="modal_schedule_${i}_endHour" value="${s.endHour || 8}" min="0" max="23" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;">
+              </div>
+              <div class="form-group">
+                <label style="font-size:12px;">Menit</label>
+                <input type="number" id="modal_schedule_${i}_endMinute" value="${s.endMinute || 0}" min="0" max="59" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;">
+              </div>
+              <div class="form-group">
+                <label style="font-size:12px;">Status</label>
+                <select id="modal_schedule_${i}_status" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;">
+                  <option value="1" ${s.status_wfh === "1" ? 'selected' : ''}>WFH</option>
+                  <option value="2" ${s.status_wfh === "2" ? 'selected' : ''}>WFO</option>
+                  <option value="3" ${s.status_wfh === "3" ? 'selected' : ''}>Dinas Luar</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+      
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button type="button" class="btn btn-success" onclick="applyScheduleChanges()">💾 Simpan Jadwal</button>
+        <button type="button" class="btn btn-primary" onclick="hideScheduleModal()">❌ Tutup</button>
+      </div>
     </div>
   </div>
 
@@ -1697,6 +1733,57 @@ async function handleDashboard(env, corsHeaders) {
       } catch (err) {
         showResult('error', '❌ Error: ' + err.message);
       }
+    }
+
+    // Password Modal Functions
+    function showPasswordModal() {
+      document.getElementById('passwordModal').style.display = 'flex';
+    }
+
+    function hidePasswordModal() {
+      document.getElementById('passwordModal').style.display = 'none';
+      document.getElementById('currentPassword').value = '';
+      document.getElementById('newPassword').value = '';
+      document.getElementById('confirmPassword').value = '';
+    }
+
+    // Schedule Modal Functions
+    function showScheduleModal() {
+      document.getElementById('scheduleModal').style.display = 'flex';
+    }
+
+    function hideScheduleModal() {
+      document.getElementById('scheduleModal').style.display = 'none';
+    }
+
+    function applyScheduleChanges() {
+      // Copy values from modal to hidden form inputs
+      for (let i = 0; i < 3; i++) {
+        const enabled = document.getElementById(\`modal_schedule_\${i}_enabled\`);
+        const startHour = document.getElementById(\`modal_schedule_\${i}_startHour\`);
+        const startMinute = document.getElementById(\`modal_schedule_\${i}_startMinute\`);
+        const endHour = document.getElementById(\`modal_schedule_\${i}_endHour\`);
+        const endMinute = document.getElementById(\`modal_schedule_\${i}_endMinute\`);
+        const status = document.getElementById(\`modal_schedule_\${i}_status\`);
+        
+        // Find and update hidden inputs
+        const enabledInput = document.querySelector(\`input[name="schedule_\${i}_enabled"]\`);
+        const startHourInput = document.querySelector(\`input[name="schedule_\${i}_startHour"]\`);
+        const startMinuteInput = document.querySelector(\`input[name="schedule_\${i}_startMinute"]\`);
+        const endHourInput = document.querySelector(\`input[name="schedule_\${i}_endHour"]\`);
+        const endMinuteInput = document.querySelector(\`input[name="schedule_\${i}_endMinute"]\`);
+        const statusInput = document.querySelector(\`input[name="schedule_\${i}_status"]\`);
+        
+        if (enabledInput) enabledInput.checked = enabled.checked;
+        if (startHourInput) startHourInput.value = startHour.value;
+        if (startMinuteInput) startMinuteInput.value = startMinute.value;
+        if (endHourInput) endHourInput.value = endHour.value;
+        if (endMinuteInput) endMinuteInput.value = endMinute.value;
+        if (statusInput) statusInput.value = status.value;
+      }
+      
+      hideScheduleModal();
+      showResult('success', '✅ Jadwal diperbarui. Klik "Simpan Konfigurasi" untuk menyimpan.');
     }
 
     // Import Pegawai Functions
