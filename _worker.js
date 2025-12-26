@@ -352,21 +352,6 @@ export default {
         console.log("Error reading today's checkins:", e.message);
       }
 
-      // Hitung probabilitas check-in berdasarkan posisi dalam rentang
-      // Semakin mendekati akhir rentang, probabilitas semakin tinggi
-      const startMinutes = schedule.startHour * 60 + schedule.startMinute;
-      const endMinutes = schedule.endHour * 60 + schedule.endMinute;
-      const rangeMinutes = endMinutes - startMinutes;
-      const elapsedMinutes = currentMinutes - startMinutes;
-      const progress = elapsedMinutes / rangeMinutes; // 0.0 - 1.0
-
-      // Probabilitas: 25% di awal, meningkat hingga 100% di akhir rentang
-      // Formula: 25% + (progress * 75%)
-      const probability = 0.25 + (progress * 0.75);
-      const randomValue = Math.random();
-
-      console.log(`🎲 Progress dalam rentang: ${Math.round(progress * 100)}%, Probabilitas: ${Math.round(probability * 100)}%, Random: ${Math.round(randomValue * 100)}%`);
-
       // Hitung jumlah user yang perlu check-in (belum check-in hari ini untuk jadwal ini)
       const activeUsers = config.users.filter(u => u.enabled && u.nip && u.password);
       const usersNeedCheckin = activeUsers.filter(u => {
@@ -380,17 +365,7 @@ export default {
       }
 
       console.log(`👥 User perlu check-in: ${usersNeedCheckin.length}/${activeUsers.length}`);
-
-      // Cek probabilitas - jika tidak lolos dan belum di akhir rentang, skip dan tunggu trigger berikutnya
-      // Kecuali jika sudah di 5 menit terakhir rentang, maka paksa check-in
-      const isNearEnd = (endMinutes - currentMinutes) <= 5;
-
-      if (!isNearEnd && randomValue > probability) {
-        console.log(`⏳ Skip trigger ini (random ${Math.round(randomValue * 100)}% > probability ${Math.round(probability * 100)}%), tunggu trigger berikutnya`);
-        return;
-      }
-
-      console.log(`🚀 Menjalankan check-in! ${isNearEnd ? '(mendekati akhir rentang)' : `(random ${Math.round(randomValue * 100)}% <= probability ${Math.round(probability * 100)}%)`}`);
+      console.log(`🚀 Menjalankan check-in ${schedule.name}...`);
 
       // Check-in untuk semua user yang belum check-in
       let userIndex = 0;
