@@ -11,16 +11,8 @@
   "triggers": {
     "crons": [
       "0 23 * * SUN,MON,TUE,WED,THU",
-      "15 23 * * SUN,MON,TUE,WED,THU",
-      "30 23 * * SUN,MON,TUE,WED,THU",
-      "45 23 * * SUN,MON,TUE,WED,THU",
       "5 4 * * MON,TUE,WED,THU,FRI",
-      "15 4 * * MON,TUE,WED,THU,FRI",
-      "30 4 * * MON,TUE,WED,THU,FRI",
-      "45 4 * * MON,TUE,WED,THU,FRI",
-      "30 9 * * MON,TUE,WED,THU,FRI",
-      "45 9 * * MON,TUE,WED,THU,FRI",
-      "0 10 * * MON,TUE,WED,THU,FRI"
+      "30 9 * * MON,TUE,WED,THU,FRI"
     ]
   }
 }
