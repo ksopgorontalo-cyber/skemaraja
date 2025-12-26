@@ -308,8 +308,10 @@ export default {
       const currentDay = witaTime.getDay(); // 0 = Minggu, 6 = Sabtu
       const currentHour = witaTime.getHours();
       const currentMinute = witaTime.getMinutes();
+      const todayKey = `${witaTime.getFullYear()}-${String(witaTime.getMonth() + 1).padStart(2, '0')}-${String(witaTime.getDate()).padStart(2, '0')}`;
 
       console.log(`📅 WITA Time: ${witaTime.toISOString()}, Day: ${currentDay}, Hour: ${currentHour}, Minute: ${currentMinute}`);
+      console.log(`📅 Today Key: ${todayKey}`);
 
       // Skip hari Sabtu (6) dan Minggu (0)
       if (currentDay === 0 || currentDay === 6) {
@@ -317,19 +319,21 @@ export default {
         return;
       }
 
-      // Deteksi jadwal berdasarkan waktu WITA saat ini
-      // Pagi: 05:00-10:59, Siang: 11:00-14:59, Sore: 15:00-22:59
+      // Deteksi jadwal berdasarkan rentang waktu yang sudah dikonfigurasi di dashboard
+      const currentMinutes = currentHour * 60 + currentMinute;
       let detectedSchedule = null;
 
-      if (currentHour >= 5 && currentHour < 11) {
-        // Jadwal Pagi
-        detectedSchedule = config.schedules.find(s => s.name === "Pagi" && s.enabled);
-      } else if (currentHour >= 11 && currentHour < 15) {
-        // Jadwal Siang
-        detectedSchedule = config.schedules.find(s => s.name === "Siang" && s.enabled);
-      } else if (currentHour >= 15 && currentHour < 23) {
-        // Jadwal Sore
-        detectedSchedule = config.schedules.find(s => s.name === "Sore" && s.enabled);
+      for (const schedule of config.schedules) {
+        if (!schedule.enabled) continue;
+
+        const startMinutes = schedule.startHour * 60 + schedule.startMinute;
+        const endMinutes = schedule.endHour * 60 + schedule.endMinute;
+
+        if (currentMinutes >= startMinutes && currentMinutes <= endMinutes) {
+          detectedSchedule = schedule;
+          console.log(`✅ Jadwal ${schedule.name} terdeteksi! Waktu WITA: ${currentHour}:${String(currentMinute).padStart(2, '0')}, Range: ${schedule.startHour}:${String(schedule.startMinute).padStart(2, '0')} - ${schedule.endHour}:${String(schedule.endMinute).padStart(2, '0')}`);
+          break;
+        }
       }
 
       if (!detectedSchedule) {
@@ -338,44 +342,90 @@ export default {
       }
 
       const schedule = detectedSchedule;
-      console.log(`✅ Jadwal ${schedule.name} terdeteksi! Waktu WITA: ${currentHour}:${String(currentMinute).padStart(2, '0')}`);
 
-      // Hitung currentMinutes untuk random delay
-      const currentMinutes = currentHour * 60 + currentMinute;
+      // Ambil status check-in hari ini dari KV
+      let todayCheckins = {};
+      try {
+        const stored = await env.CHECKIN_KV.get(`checkins_${todayKey}`, "json");
+        if (stored) todayCheckins = stored;
+      } catch (e) {
+        console.log("Error reading today's checkins:", e.message);
+      }
 
-      // Hitung jumlah user yang akan check-in
+      // Hitung probabilitas check-in berdasarkan posisi dalam rentang
+      // Semakin mendekati akhir rentang, probabilitas semakin tinggi
+      const startMinutes = schedule.startHour * 60 + schedule.startMinute;
+      const endMinutes = schedule.endHour * 60 + schedule.endMinute;
+      const rangeMinutes = endMinutes - startMinutes;
+      const elapsedMinutes = currentMinutes - startMinutes;
+      const progress = elapsedMinutes / rangeMinutes; // 0.0 - 1.0
+
+      // Probabilitas: 25% di awal, meningkat hingga 100% di akhir rentang
+      // Formula: 25% + (progress * 75%)
+      const probability = 0.25 + (progress * 0.75);
+      const randomValue = Math.random();
+
+      console.log(`🎲 Progress dalam rentang: ${Math.round(progress * 100)}%, Probabilitas: ${Math.round(probability * 100)}%, Random: ${Math.round(randomValue * 100)}%`);
+
+      // Hitung jumlah user yang perlu check-in (belum check-in hari ini untuk jadwal ini)
       const activeUsers = config.users.filter(u => u.enabled && u.nip && u.password);
-      console.log(`👥 Total user aktif: ${activeUsers.length}`);
+      const usersNeedCheckin = activeUsers.filter(u => {
+        const checkinKey = `${u.nip}_${schedule.name}`;
+        return !todayCheckins[checkinKey];
+      });
 
-      // Check-in untuk semua user dengan random delay
+      if (usersNeedCheckin.length === 0) {
+        console.log(`✅ Semua user sudah check-in ${schedule.name} hari ini`);
+        return;
+      }
+
+      console.log(`👥 User perlu check-in: ${usersNeedCheckin.length}/${activeUsers.length}`);
+
+      // Cek probabilitas - jika tidak lolos dan belum di akhir rentang, skip dan tunggu trigger berikutnya
+      // Kecuali jika sudah di 5 menit terakhir rentang, maka paksa check-in
+      const isNearEnd = (endMinutes - currentMinutes) <= 5;
+
+      if (!isNearEnd && randomValue > probability) {
+        console.log(`⏳ Skip trigger ini (random ${Math.round(randomValue * 100)}% > probability ${Math.round(probability * 100)}%), tunggu trigger berikutnya`);
+        return;
+      }
+
+      console.log(`🚀 Menjalankan check-in! ${isNearEnd ? '(mendekati akhir rentang)' : `(random ${Math.round(randomValue * 100)}% <= probability ${Math.round(probability * 100)}%)`}`);
+
+      // Check-in untuk semua user yang belum check-in
       let userIndex = 0;
-      for (const user of activeUsers) {
+      for (const user of usersNeedCheckin) {
         userIndex++;
 
-        // Hitung random delay untuk user ini
-        const { delayMs, targetTime } = getRandomDelayForSchedule(schedule, currentMinutes);
-
-        console.log(`👤 [${userIndex}/${activeUsers.length}] ${user.name} dijadwalkan check-in jam ${targetTime} (delay ${Math.round(delayMs / 60000)} menit)`);
-
-        // Untuk Cloudflare Workers, kita tidak bisa delay lama
-        // Jadi kita langsung log waktu target dan check-in sekarang dengan random detik saja
-        const randomSeconds = Math.floor(Math.random() * 30); // 0-30 detik random
+        // Random delay 0-30 detik
+        const randomSeconds = Math.floor(Math.random() * 30);
         if (randomSeconds > 0) {
           await new Promise(r => setTimeout(r, randomSeconds * 1000));
         }
 
-        console.log(`🚀 Memulai check-in untuk: ${user.name}`);
-        await performCheckin(config, schedule, user, env);
+        console.log(`🚀 [${userIndex}/${usersNeedCheckin.length}] Memulai check-in untuk: ${user.name}`);
+        const result = await performCheckin(config, schedule, user, env);
 
-        // Delay 3+random detik antar user
-        if (userIndex < activeUsers.length) {
-          const interUserDelay = 3000 + Math.floor(Math.random() * 5000); // 3-8 detik
+        // Tandai sudah check-in hari ini
+        if (result.success) {
+          const checkinKey = `${user.nip}_${schedule.name}`;
+          todayCheckins[checkinKey] = {
+            time: new Date().toISOString(),
+            success: true
+          };
+          // Simpan ke KV dengan TTL 24 jam
+          await env.CHECKIN_KV.put(`checkins_${todayKey}`, JSON.stringify(todayCheckins), { expirationTtl: 86400 });
+        }
+
+        // Delay 3-8 detik antar user
+        if (userIndex < usersNeedCheckin.length) {
+          const interUserDelay = 3000 + Math.floor(Math.random() * 5000);
           console.log(`⏳ Menunggu ${Math.round(interUserDelay / 1000)} detik sebelum user berikutnya...`);
           await new Promise(r => setTimeout(r, interUserDelay));
         }
       }
 
-      console.log(`✅ Selesai check-in ${schedule.name} untuk ${activeUsers.length} user`);
+      console.log(`✅ Selesai check-in ${schedule.name} untuk ${usersNeedCheckin.length} user`);
     } catch (error) {
       console.error("❌ Scheduled error:", error);
       await addLog(env, {
@@ -386,6 +436,7 @@ export default {
     }
   }
 };
+
 
 // ============================================================================
 // Config Management
