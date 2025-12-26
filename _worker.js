@@ -220,13 +220,7 @@ async function sendPreCheckinNotification(env, user, schedule, locationName, tim
 
   const waMessage = `⏰ *Auto Check-in SKEMARAJA Dimulai*
 
-👤 *Nama:* ${user.name}
-📅 *Jadwal:* ${schedule.name}
-🕐 *Waktu:* ${timeStr}
-📍 *Status:* ${schedule.status_wfh === '1' ? 'WFH' : schedule.status_wfh === '2' ? 'WFO' : 'Dinas Luar'}
-🗺️ *Lokasi:* ${locationName}
-
-🔄 Proses check-in akan segera dijalankan...
+🔄 Proses check-in *${schedule.name}* akan segera dijalankan...
 Hasil akan dikirimkan setelah selesai.
 
 _Auto Check-in by SKEMARAJA_`;
