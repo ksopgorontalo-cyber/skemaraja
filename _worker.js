@@ -317,55 +317,65 @@ export default {
         return;
       }
 
-      // Cek setiap jadwal - apakah waktu sekarang dalam range
-      for (const schedule of config.schedules) {
-        if (!schedule.enabled) continue;
+      // Deteksi jadwal berdasarkan waktu WITA saat ini
+      // Pagi: 05:00-10:59, Siang: 11:00-14:59, Sore: 15:00-22:59
+      let detectedSchedule = null;
 
-        // Cek apakah waktu sekarang dalam range jadwal
-        const startMinutes = schedule.startHour * 60 + schedule.startMinute;
-        const endMinutes = schedule.endHour * 60 + schedule.endMinute;
-        const currentMinutes = currentHour * 60 + currentMinute;
+      if (currentHour >= 5 && currentHour < 11) {
+        // Jadwal Pagi
+        detectedSchedule = config.schedules.find(s => s.name === "Pagi" && s.enabled);
+      } else if (currentHour >= 11 && currentHour < 15) {
+        // Jadwal Siang
+        detectedSchedule = config.schedules.find(s => s.name === "Siang" && s.enabled);
+      } else if (currentHour >= 15 && currentHour < 23) {
+        // Jadwal Sore
+        detectedSchedule = config.schedules.find(s => s.name === "Sore" && s.enabled);
+      }
 
-        // Hanya proses jika tepat di awal range (toleransi 2 menit)
-        // Ini agar tidak check-in ulang jika cron trigger lagi
-        if (currentMinutes >= startMinutes && currentMinutes <= startMinutes + 2) {
-          console.log(`✅ Jadwal ${schedule.name} dimulai! Range: ${schedule.startHour}:${String(schedule.startMinute).padStart(2, '0')} - ${schedule.endHour}:${String(schedule.endMinute).padStart(2, '0')}`);
+      if (!detectedSchedule) {
+        console.log(`⚠️ Tidak ada jadwal yang cocok untuk jam ${currentHour}:${String(currentMinute).padStart(2, '0')} WITA`);
+        return;
+      }
 
-          // Hitung jumlah user yang akan check-in
-          const activeUsers = config.users.filter(u => u.enabled && u.nip && u.password);
-          console.log(`👥 Total user aktif: ${activeUsers.length}`);
+      const schedule = detectedSchedule;
+      console.log(`✅ Jadwal ${schedule.name} terdeteksi! Waktu WITA: ${currentHour}:${String(currentMinute).padStart(2, '0')}`);
 
-          // Check-in untuk semua user dengan random delay
-          let userIndex = 0;
-          for (const user of activeUsers) {
-            userIndex++;
+      // Hitung currentMinutes untuk random delay
+      const currentMinutes = currentHour * 60 + currentMinute;
 
-            // Hitung random delay untuk user ini
-            const { delayMs, targetTime } = getRandomDelayForSchedule(schedule, currentMinutes);
+      // Hitung jumlah user yang akan check-in
+      const activeUsers = config.users.filter(u => u.enabled && u.nip && u.password);
+      console.log(`👥 Total user aktif: ${activeUsers.length}`);
 
-            console.log(`👤 [${userIndex}/${activeUsers.length}] ${user.name} dijadwalkan check-in jam ${targetTime} (delay ${Math.round(delayMs / 60000)} menit)`);
+      // Check-in untuk semua user dengan random delay
+      let userIndex = 0;
+      for (const user of activeUsers) {
+        userIndex++;
 
-            // Untuk Cloudflare Workers, kita tidak bisa delay lama
-            // Jadi kita langsung log waktu target dan check-in sekarang dengan random detik saja
-            const randomSeconds = Math.floor(Math.random() * 30); // 0-30 detik random
-            if (randomSeconds > 0) {
-              await new Promise(r => setTimeout(r, randomSeconds * 1000));
-            }
+        // Hitung random delay untuk user ini
+        const { delayMs, targetTime } = getRandomDelayForSchedule(schedule, currentMinutes);
 
-            console.log(`🚀 Memulai check-in untuk: ${user.name}`);
-            await performCheckin(config, schedule, user, env);
+        console.log(`👤 [${userIndex}/${activeUsers.length}] ${user.name} dijadwalkan check-in jam ${targetTime} (delay ${Math.round(delayMs / 60000)} menit)`);
 
-            // Delay 3+random detik antar user
-            if (userIndex < activeUsers.length) {
-              const interUserDelay = 3000 + Math.floor(Math.random() * 5000); // 3-8 detik
-              console.log(`⏳ Menunggu ${Math.round(interUserDelay / 1000)} detik sebelum user berikutnya...`);
-              await new Promise(r => setTimeout(r, interUserDelay));
-            }
-          }
+        // Untuk Cloudflare Workers, kita tidak bisa delay lama
+        // Jadi kita langsung log waktu target dan check-in sekarang dengan random detik saja
+        const randomSeconds = Math.floor(Math.random() * 30); // 0-30 detik random
+        if (randomSeconds > 0) {
+          await new Promise(r => setTimeout(r, randomSeconds * 1000));
+        }
 
-          console.log(`✅ Selesai check-in ${schedule.name} untuk ${activeUsers.length} user`);
+        console.log(`🚀 Memulai check-in untuk: ${user.name}`);
+        await performCheckin(config, schedule, user, env);
+
+        // Delay 3+random detik antar user
+        if (userIndex < activeUsers.length) {
+          const interUserDelay = 3000 + Math.floor(Math.random() * 5000); // 3-8 detik
+          console.log(`⏳ Menunggu ${Math.round(interUserDelay / 1000)} detik sebelum user berikutnya...`);
+          await new Promise(r => setTimeout(r, interUserDelay));
         }
       }
+
+      console.log(`✅ Selesai check-in ${schedule.name} untuk ${activeUsers.length} user`);
     } catch (error) {
       console.error("❌ Scheduled error:", error);
       await addLog(env, {
