@@ -193,6 +193,69 @@ _Auto Check-in by SKEMARAJA_`;
   }
 }
 
+// Send WhatsApp notification BEFORE check-in starts
+async function sendPreCheckinNotification(env, user, schedule, locationName, timeStr) {
+  // Get device token from KV config first, fallback to env
+  let deviceToken = env.FONNTE_TOKEN;
+  try {
+    const stored = await env.CHECKIN_KV.get("fonnte_config");
+    if (stored) {
+      const fonnteConfig = JSON.parse(stored);
+      if (fonnteConfig.deviceToken) {
+        deviceToken = fonnteConfig.deviceToken;
+      }
+    }
+  } catch (e) {
+    console.log("Error reading fonnte config from KV:", e.message);
+  }
+
+  // Skip jika tidak ada nomor HP atau token Fonnte
+  if (!user.phone || !deviceToken) {
+    console.log(`📱 Skip pre-checkin notification: ${!user.phone ? 'No phone' : 'No Fonnte token'}`);
+    return;
+  }
+
+  // Format nomor HP
+  let phone = user.phone.replace(/\D/g, '');
+
+  const waMessage = `⏰ *Auto Check-in SKEMARAJA Dimulai*
+
+👤 *Nama:* ${user.name}
+📅 *Jadwal:* ${schedule.name}
+🕐 *Waktu:* ${timeStr}
+📍 *Status:* ${schedule.status_wfh === '1' ? 'WFH' : schedule.status_wfh === '2' ? 'WFO' : 'Dinas Luar'}
+🗺️ *Lokasi:* ${locationName}
+
+🔄 Proses check-in akan segera dijalankan...
+Hasil akan dikirimkan setelah selesai.
+
+_Auto Check-in by SKEMARAJA_`;
+
+  try {
+    const formData = new URLSearchParams();
+    formData.append('target', phone);
+    formData.append('message', waMessage);
+    formData.append('countryCode', '62');
+
+    const response = await fetch(FONNTE_API, {
+      method: 'POST',
+      headers: {
+        'Authorization': deviceToken
+      },
+      body: formData
+    });
+
+    const result = await response.json();
+    if (result.status === true) {
+      console.log(`📱 Pre-checkin notification sent to ${user.name}`);
+    } else {
+      console.log(`📱 Pre-checkin notification failed: ${result.reason || 'Unknown error'}`);
+    }
+  } catch (error) {
+    console.error(`📱 Pre-checkin notification error: ${error.message}`);
+  }
+}
+
 // ============================================================================
 // Main Worker Export
 // ============================================================================
@@ -366,6 +429,12 @@ export default {
 
       console.log(`👥 User perlu check-in: ${usersNeedCheckin.length}/${activeUsers.length}`);
       console.log(`🚀 Menjalankan check-in ${schedule.name}...`);
+
+      // Kirim notifikasi WA "check-in dimulai" ke semua user yang akan check-in
+      const witaTimeStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Makassar' });
+      for (const user of usersNeedCheckin) {
+        await sendPreCheckinNotification(env, user, schedule, config.location?.name || 'KSOP Gorontalo', witaTimeStr);
+      }
 
       // Check-in untuk semua user yang belum check-in
       let userIndex = 0;
@@ -1007,6 +1076,34 @@ async function handleDashboard(env, corsHeaders) {
           <div class="count-number">${config.location.name}</div>
           <div class="count-label">Lokasi</div>
         </div>
+      </div>
+    </div>
+
+    <!-- Schedule Info Card -->
+    <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+      <h2 style="color: white; border-color: rgba(255,255,255,0.3);">🔔 Jadwal Auto Check-in</h2>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+        ${config.schedules.filter(s => s.enabled).map(s => {
+    const cronTimes = { 'Pagi': '07:00', 'Siang': '12:05', 'Sore': '17:30' };
+    const icons = { 'Pagi': '🌅', 'Siang': '☀️', 'Sore': '🌆' };
+    const cronTime = cronTimes[s.name] || '00:00';
+    const icon = icons[s.name] || '⏰';
+    const rangeStart = String(s.startHour).padStart(2, '0') + ':' + String(s.startMinute).padStart(2, '0');
+    const rangeEnd = String(s.endHour).padStart(2, '0') + ':' + String(s.endMinute).padStart(2, '0');
+    return '<div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; backdrop-filter: blur(10px);">' +
+      '<div style="font-size: 20px; font-weight: 700; margin-bottom: 8px;">' + icon + ' ' + s.name + '</div>' +
+      '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">' +
+      '<div><div style="font-size: 12px; opacity: 0.8;">Trigger Cron:</div>' +
+      '<div style="font-size: 18px; font-weight: 600;">' + cronTime + ' WITA</div></div>' +
+      '<div><div style="font-size: 12px; opacity: 0.8;">Rentang Valid:</div>' +
+      '<div style="font-size: 18px; font-weight: 600;">' + rangeStart + ' - ' + rangeEnd + '</div></div></div>' +
+      '<div style="font-size: 11px; opacity: 0.7; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2);">' +
+      '⏰ Cron trigger pada ' + cronTime + ', check-in jika dalam rentang + random delay 0-30 detik</div></div>';
+  }).join('')}
+      </div>
+      <div style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.1); border-radius: 8px; font-size: 13px;">
+        <strong>ℹ️ Catatan:</strong> Auto check-in berjalan setiap hari kerja (Senin-Jumat). 
+        Waktu check-in bervariasi 0-30 detik dari waktu trigger. Jika sudah check-in hari ini, akan di-skip.
       </div>
     </div>
 
