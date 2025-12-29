@@ -193,6 +193,62 @@ _Auto Check-in by SKEMARAJA_`;
   }
 }
 
+// Test connection to SKEMARAJA with retry until successful
+async function testSkemarajaConnection(maxAttempts = 10) {
+  let attempt = 0;
+  let delaySeconds = 5; // Start with 5 seconds delay
+  const maxDelay = 60; // Maximum delay of 60 seconds
+
+  while (attempt < maxAttempts) {
+    attempt++;
+    console.log(`🔗 [${attempt}/${maxAttempts}] Mencoba koneksi ke SKEMARAJA...`);
+
+    try {
+      const response = await fetch(SKEMARAJA_LOGIN, {
+        method: 'GET',
+        headers: {
+          "User-Agent": getRandomUserAgent(),
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        },
+        // Set timeout dengan AbortController (10 detik)
+        signal: AbortSignal.timeout(10000)
+      });
+
+      if (response.ok) {
+        console.log(`✅ Koneksi ke SKEMARAJA berhasil! (attempt ${attempt})`);
+        return { success: true, attempts: attempt };
+      }
+
+      // Jika error 522 (Connection timed out) atau 5xx, retry
+      if (response.status === 522 || response.status >= 500) {
+        console.log(`⚠️ Server error ${response.status}, menunggu ${delaySeconds} detik sebelum retry...`);
+        await new Promise(r => setTimeout(r, delaySeconds * 1000));
+        // Exponential backoff dengan maximum
+        delaySeconds = Math.min(delaySeconds * 1.5, maxDelay);
+        continue;
+      }
+
+      // Untuk error lain, anggap koneksi sukses tapi ada masalah lain
+      console.log(`⚠️ Response status ${response.status}, lanjutkan check-in...`);
+      return { success: true, attempts: attempt, status: response.status };
+
+    } catch (error) {
+      console.log(`❌ Koneksi gagal (attempt ${attempt}): ${error.message}`);
+
+      // Jika masih ada attempts, retry dengan delay
+      if (attempt < maxAttempts) {
+        console.log(`⏳ Menunggu ${delaySeconds} detik sebelum retry...`);
+        await new Promise(r => setTimeout(r, delaySeconds * 1000));
+        // Exponential backoff
+        delaySeconds = Math.min(delaySeconds * 1.5, maxDelay);
+      }
+    }
+  }
+
+  console.log(`❌ Koneksi gagal setelah ${maxAttempts} attempts`);
+  return { success: false, attempts: attempt };
+}
+
 // Send WhatsApp notification BEFORE check-in starts
 async function sendPreCheckinNotification(env, user, schedule, locationName, timeStr) {
   // Get device token from KV config first, fallback to env
@@ -423,6 +479,24 @@ export default {
 
       console.log(`👥 User perlu check-in: ${usersNeedCheckin.length}/${activeUsers.length}`);
       console.log(`🚀 Menjalankan check-in ${schedule.name}...`);
+
+      // ========== TEST KONEKSI DULU SEBELUM CHECK-IN ==========
+      console.log(`🔗 Melakukan test koneksi ke SKEMARAJA sebelum check-in...`);
+      const connectionTest = await testSkemarajaConnection(15); // Max 15 attempts
+
+      if (!connectionTest.success) {
+        console.log(`❌ Gagal terhubung ke SKEMARAJA setelah ${connectionTest.attempts} attempts, abort check-in ${schedule.name}`);
+        await addLog(env, {
+          timestamp: new Date().toISOString(),
+          type: "error",
+          schedule: schedule.name,
+          message: `Koneksi ke SKEMARAJA gagal setelah ${connectionTest.attempts} attempts - check-in dibatalkan`
+        });
+        return;
+      }
+
+      console.log(`✅ Koneksi SKEMARAJA berhasil setelah ${connectionTest.attempts} attempt(s), lanjut check-in...`);
+      // ========== END TEST KONEKSI ==========
 
       // Kirim notifikasi WA "check-in dimulai" ke semua user yang akan check-in
       const witaTimeStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Makassar' });
