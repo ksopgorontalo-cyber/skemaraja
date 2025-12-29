@@ -559,6 +559,12 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
     });
 
     if (!loginPageResponse.ok) {
+      // Retry untuk error 522 (Connection timed out)
+      if (loginPageResponse.status === 522 && retryCount < maxRetries) {
+        console.log(`⚠️ Error 522 saat akses login page, retrying in 3 seconds... (retry ${retryCount + 1}/${maxRetries})`);
+        await new Promise(r => setTimeout(r, 3000));
+        return await performCheckin(config, schedule, user, env, retryCount + 1);
+      }
       throw new Error(`Gagal mengakses halaman login: ${loginPageResponse.status}`);
     }
 
