@@ -28,6 +28,64 @@ const DEFAULT_CONFIG = {
   timezone: "Asia/Makassar"
 };
 
+// Daftar Hari Libur Nasional Indonesia (Default)
+// Format: "YYYY-MM-DD": "Nama Hari Libur"
+// Dapat diedit melalui dashboard
+const DEFAULT_HOLIDAYS = {
+  // ========== 2026 ==========
+  "2026-01-01": "Tahun Baru Masehi",
+  "2026-01-16": "Isra Mi'raj Nabi Muhammad SAW",
+  "2026-02-17": "Tahun Baru Imlek 2577",
+  "2026-03-17": "Hari Suci Nyepi Tahun Baru Saka 1948",
+  "2026-03-19": "Hari Raya Idul Fitri 1447 H",
+  "2026-03-20": "Hari Raya Idul Fitri 1447 H",
+  "2026-03-21": "Cuti Bersama Idul Fitri",
+  "2026-03-22": "Cuti Bersama Idul Fitri",
+  "2026-04-03": "Wafat Isa Al Masih",
+  "2026-05-01": "Hari Buruh Internasional",
+  "2026-05-02": "Hari Raya Waisak 2570 BE",
+  "2026-05-14": "Kenaikan Isa Al Masih",
+  "2026-05-26": "Hari Raya Idul Adha 1447 H",
+  "2026-06-01": "Hari Lahir Pancasila",
+  "2026-06-16": "Tahun Baru Islam 1448 H",
+  "2026-08-17": "Hari Kemerdekaan RI",
+  "2026-08-25": "Maulid Nabi Muhammad SAW",
+  "2026-12-25": "Hari Raya Natal",
+  // ========== 2027 ==========
+  "2027-01-01": "Tahun Baru Masehi",
+};
+
+// Get holidays from KV or use default
+async function getHolidays(env) {
+  try {
+    if (env.CHECKIN_KV) {
+      const stored = await env.CHECKIN_KV.get("holidays", "json");
+      if (stored && Object.keys(stored).length > 0) {
+        return stored;
+      }
+    }
+  } catch (e) {
+    console.error("Error getting holidays:", e);
+  }
+  return { ...DEFAULT_HOLIDAYS };
+}
+
+// Save holidays to KV
+async function saveHolidays(env, holidays) {
+  if (env.CHECKIN_KV) {
+    await env.CHECKIN_KV.put("holidays", JSON.stringify(holidays));
+    return true;
+  }
+  return false;
+}
+
+// Fungsi untuk mengecek apakah tanggal adalah hari libur nasional
+function isNationalHoliday(dateStr, holidays) {
+  // dateStr format: "YYYY-MM-DD"
+  // holidays: object { "YYYY-MM-DD": "nama libur" }
+  return holidays[dateStr] || null;
+}
+
 // SKEMARAJA endpoints
 const SKEMARAJA_BASE = "https://skemaraja.dephub.go.id";
 const SKEMARAJA_LOGIN = `${SKEMARAJA_BASE}/login`;
@@ -396,6 +454,15 @@ export default {
         return handleChangePassword(request, env, corsHeaders);
       }
 
+      // Holiday management routes
+      if (path === "/holidays") {
+        if (request.method === "GET") {
+          return handleGetHolidays(env, corsHeaders);
+        } else if (request.method === "POST") {
+          return handleSaveHolidays(request, env, corsHeaders);
+        }
+      }
+
       return new Response("Not Found", { status: 404, headers: corsHeaders });
     } catch (error) {
       console.error("Error:", error);
@@ -429,6 +496,14 @@ export default {
       // Skip hari Sabtu (6) dan Minggu (0)
       if (currentDay === 0 || currentDay === 6) {
         console.log("📅 Hari libur (Sabtu/Minggu) - skip check-in");
+        return;
+      }
+
+      // Skip hari libur nasional Indonesia
+      const holidays = await getHolidays(env);
+      const holidayName = isNationalHoliday(todayKey, holidays);
+      if (holidayName) {
+        console.log(`📅 Hari Libur Nasional: ${holidayName} - skip check-in`);
         return;
       }
 
@@ -1246,6 +1321,7 @@ async function handleDashboard(env, corsHeaders) {
           `).join('')}
         </div>
         <button type="button" class="btn btn-info btn-sm" onclick="showScheduleModal()">📅 Edit Jadwal</button>
+        <button type="button" class="btn btn-warning btn-sm" onclick="showHolidayModal()">🎌 Edit Hari Libur</button>
         
         <!-- Hidden inputs for form submission -->
         <div id="scheduleInputs" style="display:none;">
@@ -1410,6 +1486,43 @@ async function handleDashboard(env, corsHeaders) {
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
         <button type="button" class="btn btn-success" onclick="applyScheduleChanges()">💾 Simpan Jadwal</button>
         <button type="button" class="btn btn-primary" onclick="hideScheduleModal()">❌ Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Holiday Settings Modal -->
+  <div id="holidayModal" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center; overflow-y:auto;">
+    <div class="modal-content" style="background:white; padding:24px; border-radius:16px; width:90%; max-width:600px; margin:20px auto; max-height:80vh; overflow-y:auto;">
+      <h3 style="margin-bottom:20px; color:#1e3c72;">🎌 Edit Hari Libur Nasional</h3>
+      
+      <div style="margin-bottom:16px; padding:12px; background:#fff3cd; border-radius:8px; font-size:13px;">
+        <strong>ℹ️ Info:</strong> Auto check-in akan di-skip pada hari libur yang terdaftar di sini.
+      </div>
+      
+      <!-- Add New Holiday -->
+      <div style="background:#f8fafc; padding:16px; border-radius:8px; margin-bottom:16px;">
+        <strong style="display:block; margin-bottom:12px;">➕ Tambah Hari Libur Baru</strong>
+        <div style="display:grid; grid-template-columns:1fr 2fr; gap:12px;">
+          <div class="form-group">
+            <label style="font-size:12px;">Tanggal</label>
+            <input type="date" id="newHolidayDate" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;">
+          </div>
+          <div class="form-group">
+            <label style="font-size:12px;">Nama Hari Libur</label>
+            <input type="text" id="newHolidayName" placeholder="Contoh: Hari Raya Idul Fitri" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;">
+          </div>
+        </div>
+        <button type="button" class="btn btn-success btn-sm" onclick="addHoliday()" style="margin-top:12px;">➕ Tambah</button>
+      </div>
+      
+      <!-- Holiday List -->
+      <div id="holidayList" style="max-height:300px; overflow-y:auto; border:1px solid #e0e0e0; border-radius:8px;">
+        <p style="text-align:center; padding:20px; color:#666;">⏳ Loading...</p>
+      </div>
+      
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:16px;">
+        <button type="button" class="btn btn-success" onclick="saveHolidays()">💾 Simpan Perubahan</button>
+        <button type="button" class="btn btn-primary" onclick="hideHolidayModal()">❌ Tutup</button>
       </div>
     </div>
   </div>
@@ -1991,6 +2104,115 @@ async function handleDashboard(env, corsHeaders) {
       
       hideScheduleModal();
       showResult('success', '✅ Jadwal diperbarui. Klik "Simpan Konfigurasi" untuk menyimpan.');
+    }
+
+    // Holiday Modal Functions
+    let holidaysData = {};
+
+    async function showHolidayModal() {
+      document.getElementById('holidayModal').style.display = 'flex';
+      await loadHolidays();
+    }
+
+    function hideHolidayModal() {
+      document.getElementById('holidayModal').style.display = 'none';
+    }
+
+    async function loadHolidays() {
+      const container = document.getElementById('holidayList');
+      container.innerHTML = '<p style="text-align:center;padding:20px;color:#666;">⏳ Loading...</p>';
+      
+      try {
+        const res = await fetch('/holidays');
+        const data = await res.json();
+        
+        if (data.success) {
+          holidaysData = data.holidays;
+          renderHolidayList();
+        } else {
+          container.innerHTML = '<p style="color:red;padding:20px;">❌ ' + data.message + '</p>';
+        }
+      } catch (err) {
+        container.innerHTML = '<p style="color:red;padding:20px;">❌ Error: ' + err.message + '</p>';
+      }
+    }
+
+    function renderHolidayList() {
+      const container = document.getElementById('holidayList');
+      const sortedDates = Object.keys(holidaysData).sort();
+      
+      if (sortedDates.length === 0) {
+        container.innerHTML = '<p style="text-align:center;padding:20px;color:#666;">Belum ada hari libur yang terdaftar.</p>';
+        return;
+      }
+      
+      container.innerHTML = sortedDates.map(date => {
+        const name = holidaysData[date];
+        const formattedDate = new Date(date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        return \`<div style="display:flex; justify-content:space-between; align-items:center; padding:12px; border-bottom:1px solid #eee;">
+          <div>
+            <strong>\${name}</strong><br>
+            <small style="color:#666;">\${formattedDate}</small>
+          </div>
+          <button type="button" class="btn btn-danger btn-sm" onclick="removeHoliday('\${date}')">🗑️</button>
+        </div>\`;
+      }).join('');
+    }
+
+    function addHoliday() {
+      const dateInput = document.getElementById('newHolidayDate');
+      const nameInput = document.getElementById('newHolidayName');
+      
+      const date = dateInput.value;
+      const name = nameInput.value.trim();
+      
+      if (!date) {
+        alert('Pilih tanggal!');
+        return;
+      }
+      if (!name) {
+        alert('Masukkan nama hari libur!');
+        return;
+      }
+      
+      holidaysData[date] = name;
+      renderHolidayList();
+      
+      // Clear inputs
+      dateInput.value = '';
+      nameInput.value = '';
+      
+      showResult('success', '✅ Hari libur ditambahkan. Klik "Simpan Perubahan" untuk menyimpan.');
+    }
+
+    function removeHoliday(date) {
+      if (confirm('Hapus hari libur ini?')) {
+        delete holidaysData[date];
+        renderHolidayList();
+        showResult('success', '✅ Hari libur dihapus. Klik "Simpan Perubahan" untuk menyimpan.');
+      }
+    }
+
+    async function saveHolidays() {
+      showResult('pending', '⏳ Menyimpan hari libur...');
+      
+      try {
+        const res = await fetch('/holidays', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ holidays: holidaysData })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+          showResult('success', '✅ ' + data.message);
+          hideHolidayModal();
+        } else {
+          showResult('error', '❌ ' + data.message);
+        }
+      } catch (err) {
+        showResult('error', '❌ Error: ' + err.message);
+      }
     }
 
     // Import Pegawai Functions
@@ -2903,4 +3125,51 @@ function handleLogout(corsHeaders) {
       "Set-Cookie": cookie
     }
   });
+}
+
+// ============================================================================
+// Holiday Management Handlers
+// ============================================================================
+async function handleGetHolidays(env, corsHeaders) {
+  try {
+    const holidays = await getHolidays(env);
+    return new Response(JSON.stringify({
+      success: true,
+      holidays: holidays
+    }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({
+      success: false,
+      message: error.message
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  }
+}
+
+async function handleSaveHolidays(request, env, corsHeaders) {
+  try {
+    const data = await request.json();
+    const holidays = data.holidays || {};
+
+    await saveHolidays(env, holidays);
+
+    return new Response(JSON.stringify({
+      success: true,
+      message: "Hari libur berhasil disimpan!"
+    }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({
+      success: false,
+      message: error.message
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  }
 }
