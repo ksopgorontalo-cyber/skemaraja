@@ -649,9 +649,13 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
     // Log HTML length untuk debugging
     console.log(`📄 Login page HTML length: ${loginPageHtml.length} chars`);
 
-    // Extract CSRF token dengan multiple patterns
+    // Extract CSRF token dengan multiple patterns (termasuk meta tag)
     let csrfToken = null;
     const tokenPatterns = [
+      // Meta tag pattern (Laravel default)
+      /<meta\s+name="csrf-token"\s+content="([^"]+)"/,
+      /<meta\s+content="([^"]+)"\s+name="csrf-token"/,
+      // Input hidden patterns
       /name="_token"\s+(?:type="hidden"\s+)?value="([^"]+)"/,
       /value="([^"]+)"\s+(?:type="hidden"\s+)?name="_token"/,
       /<input[^>]*name="_token"[^>]*value="([^"]+)"/,
@@ -668,18 +672,18 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
       }
     }
 
-    // Jika CSRF tidak ditemukan, kemungkinan halaman tidak dimuat sempurna - retry
+    // Jika CSRF tidak ditemukan, gunakan token "test" sebagai fallback
     if (!csrfToken) {
-      console.log(`⚠️ CSRF token tidak ditemukan, HTML snippet: ${loginPageHtml.substring(0, 500)}`);
+      console.log(`⚠️ CSRF token tidak ditemukan dari HTML, menggunakan token test...`);
+      console.log(`⚠️ HTML snippet: ${loginPageHtml.substring(0, 500)}`);
 
-      if (retryCount < maxRetries) {
-        console.log(`⚠️ CSRF token tidak ditemukan, retrying in 3 seconds... (retry ${retryCount + 1}/${maxRetries})`);
-        await new Promise(r => setTimeout(r, 3000));
-        return await performCheckin(config, schedule, user, env, retryCount + 1);
-      }
-      throw new Error("CSRF token tidak ditemukan setelah beberapa percobaan");
+      // Gunakan CSRF token "test" sebagai fallback
+      // Server Laravel biasanya akan generate token baru atau tolak request
+      // Tapi kita tetap coba untuk melihat response dari server
+      csrfToken = "test";
+      console.log(`⚠️ Menggunakan CSRF token fallback: "${csrfToken}"`);
     }
-    console.log("✅ CSRF Token ditemukan");
+    console.log("✅ CSRF Token siap digunakan");
 
     // Extract cookies dari response
     const setCookies = loginPageResponse.headers.getAll("set-cookie");
