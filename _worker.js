@@ -649,37 +649,61 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
     // Log HTML length untuk debugging
     console.log(`📄 Login page HTML length: ${loginPageHtml.length} chars`);
 
+    // Log snippet untuk melihat apakah ini login page atau error page
+    if (loginPageHtml.length < 1000) {
+      console.log(`⚠️ HTML terlalu pendek, kemungkinan error page: ${loginPageHtml}`);
+    }
+
     // Extract CSRF token dengan multiple patterns (termasuk meta tag)
     let csrfToken = null;
     const tokenPatterns = [
+      // Pattern spesifik untuk format: <input name="_token" type="hidden" value="...">
+      /<input\s+name="_token"\s+type="hidden"\s+value="([^"]+)"/i,
+      // Pattern spesifik untuk format: <input type="hidden" name="_token" value="...">
+      /<input\s+type="hidden"\s+name="_token"\s+value="([^"]+)"/i,
       // Meta tag pattern (Laravel default)
-      /<meta\s+name="csrf-token"\s+content="([^"]+)"/,
-      /<meta\s+content="([^"]+)"\s+name="csrf-token"/,
-      // Input hidden patterns
-      /name="_token"\s+(?:type="hidden"\s+)?value="([^"]+)"/,
-      /value="([^"]+)"\s+(?:type="hidden"\s+)?name="_token"/,
-      /<input[^>]*name="_token"[^>]*value="([^"]+)"/,
-      /<input[^>]*value="([^"]+)"[^>]*name="_token"/,
-      /_token.*?value="([a-zA-Z0-9]{40})"/,
+      /<meta\s+name="csrf-token"\s+content="([^"]+)"/i,
+      /<meta\s+content="([^"]+)"\s+name="csrf-token"/i,
+      // Generic input patterns
+      /name="_token"[^>]*value="([^"]+)"/i,
+      /value="([^"]+)"[^>]*name="_token"/i,
+      // Fallback pattern - cari nilai token 40 karakter setelah _token
+      /_token"[^>]*value="([a-zA-Z0-9]{40})"/i,
     ];
 
     for (const pattern of tokenPatterns) {
       const tokenMatch = loginPageHtml.match(pattern);
       if (tokenMatch && tokenMatch[1]) {
         csrfToken = tokenMatch[1];
-        console.log(`✅ CSRF Token ditemukan dengan pattern: ${pattern.toString().substring(0, 50)}...`);
+        console.log(`✅ CSRF Token ditemukan: ${csrfToken.substring(0, 10)}... (pattern: ${pattern.source.substring(0, 30)})`);
         break;
       }
     }
 
-    // Jika CSRF tidak ditemukan, gunakan token "test" sebagai fallback
+    // Jika CSRF tidak ditemukan, coba extract langsung dengan simple search
     if (!csrfToken) {
-      console.log(`⚠️ CSRF token tidak ditemukan dari HTML, menggunakan token test...`);
-      console.log(`⚠️ HTML snippet: ${loginPageHtml.substring(0, 500)}`);
+      console.log(`⚠️ Pattern regex tidak cocok, mencoba simple search...`);
 
-      // Gunakan CSRF token "test" sebagai fallback
-      // Server Laravel biasanya akan generate token baru atau tolak request
-      // Tapi kita tetap coba untuk melihat response dari server
+      // Cari string _token dan extract value setelahnya
+      const tokenIdx = loginPageHtml.indexOf('name="_token"');
+      if (tokenIdx > -1) {
+        const snippet = loginPageHtml.substring(tokenIdx, tokenIdx + 100);
+        console.log(`🔍 Token context: ${snippet}`);
+
+        const valueMatch = snippet.match(/value="([^"]+)"/);
+        if (valueMatch) {
+          csrfToken = valueMatch[1];
+          console.log(`✅ CSRF Token ditemukan via simple search: ${csrfToken}`);
+        }
+      }
+    }
+
+    // Jika masih tidak ditemukan, gunakan fallback
+    if (!csrfToken) {
+      console.log(`⚠️ CSRF token tidak ditemukan dari HTML!`);
+      console.log(`⚠️ HTML first 1000 chars: ${loginPageHtml.substring(0, 1000)}`);
+
+      // Gunakan CSRF token fallback - tetap coba submit
       csrfToken = "test";
       console.log(`⚠️ Menggunakan CSRF token fallback: "${csrfToken}"`);
     }
