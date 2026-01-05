@@ -633,10 +633,12 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
     });
 
     if (!loginPageResponse.ok) {
-      // Retry untuk error 522 (Connection timed out)
-      if (loginPageResponse.status === 522 && retryCount < maxRetries) {
-        console.log(`⚠️ Error 522 saat akses login page, retrying in 3 seconds... (retry ${retryCount + 1}/${maxRetries})`);
-        await new Promise(r => setTimeout(r, 3000));
+      // Retry untuk error 521, 522, dan semua error 5xx
+      const status = loginPageResponse.status;
+      if ((status === 521 || status === 522 || status >= 500) && retryCount < maxRetries) {
+        const retryDelay = 5000 + (retryCount * 2000); // 5s, 7s, 9s
+        console.log(`⚠️ Error ${status} saat akses login page, retrying in ${retryDelay / 1000}s... (retry ${retryCount + 1}/${maxRetries})`);
+        await new Promise(r => setTimeout(r, retryDelay));
         return await performCheckin(config, schedule, user, env, retryCount + 1);
       }
       throw new Error(`Gagal mengakses halaman login: ${loginPageResponse.status}`);
@@ -644,12 +646,39 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
 
     const loginPageHtml = await loginPageResponse.text();
 
-    // Extract CSRF token
-    const tokenMatch = loginPageHtml.match(/name="_token"\s+(?:type="hidden"\s+)?value="([^"]+)"/);
-    if (!tokenMatch) {
-      throw new Error("CSRF token tidak ditemukan");
+    // Log HTML length untuk debugging
+    console.log(`📄 Login page HTML length: ${loginPageHtml.length} chars`);
+
+    // Extract CSRF token dengan multiple patterns
+    let csrfToken = null;
+    const tokenPatterns = [
+      /name="_token"\s+(?:type="hidden"\s+)?value="([^"]+)"/,
+      /value="([^"]+)"\s+(?:type="hidden"\s+)?name="_token"/,
+      /<input[^>]*name="_token"[^>]*value="([^"]+)"/,
+      /<input[^>]*value="([^"]+)"[^>]*name="_token"/,
+      /_token.*?value="([a-zA-Z0-9]{40})"/,
+    ];
+
+    for (const pattern of tokenPatterns) {
+      const tokenMatch = loginPageHtml.match(pattern);
+      if (tokenMatch && tokenMatch[1]) {
+        csrfToken = tokenMatch[1];
+        console.log(`✅ CSRF Token ditemukan dengan pattern: ${pattern.toString().substring(0, 50)}...`);
+        break;
+      }
     }
-    const csrfToken = tokenMatch[1];
+
+    // Jika CSRF tidak ditemukan, kemungkinan halaman tidak dimuat sempurna - retry
+    if (!csrfToken) {
+      console.log(`⚠️ CSRF token tidak ditemukan, HTML snippet: ${loginPageHtml.substring(0, 500)}`);
+
+      if (retryCount < maxRetries) {
+        console.log(`⚠️ CSRF token tidak ditemukan, retrying in 3 seconds... (retry ${retryCount + 1}/${maxRetries})`);
+        await new Promise(r => setTimeout(r, 3000));
+        return await performCheckin(config, schedule, user, env, retryCount + 1);
+      }
+      throw new Error("CSRF token tidak ditemukan setelah beberapa percobaan");
+    }
     console.log("✅ CSRF Token ditemukan");
 
     // Extract cookies dari response
