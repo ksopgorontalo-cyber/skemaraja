@@ -29,7 +29,7 @@ const DEFAULT_CONFIG = {
 };
 
 // SKEMARAJA endpoints
-const SKEMARAJA_BASE = "https://skemaraja.dephub.go.id";
+const SKEMARAJA_BASE = "https://skemaraja.kemenhub.go.id";
 const SKEMARAJA_LOGIN = `${SKEMARAJA_BASE}/login`;
 const SKEMARAJA_AUTH = `${SKEMARAJA_BASE}/authenticate`;
 
@@ -934,7 +934,7 @@ async function performCheckin(config, schedule, user, env, retryCount = 0) {
 
     // Logout setelah check-in untuk membersihkan session
     try {
-      await fetch("https://skemaraja.dephub.go.id/logout", {
+      await fetch("https://skemaraja.kemenhub.go.id/logout", {
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
           "Cookie": allCookies,
@@ -2781,7 +2781,7 @@ async function handleGetPegawai(request, corsHeaders) {
   const kodeKantor = url.searchParams.get("kode_kantor") || "004036057000000";
 
   try {
-    const response = await fetch(`https://skemaraja.dephub.go.id/api/pegawaiSelect?kode_kantor=${kodeKantor}`, {
+    const response = await fetch(`https://skemaraja.kemenhub.go.id/api/pegawaiSelect?kode_kantor=${kodeKantor}`, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept": "application/json",
